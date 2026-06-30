@@ -1,0 +1,43 @@
+# Node.js / React
+node_modules/
+frontend/node_modules/
+build/
+frontend/build/
+dist/
+frontend/dist/
+
+# Environment
+.env
+backend/.env
+frontend/.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+
+# Uploads
+backend/uploads/
+
+# Hugging Face / Large Models
+models/unbiased-toxic-roberta/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
