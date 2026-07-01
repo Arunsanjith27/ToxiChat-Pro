@@ -75,6 +75,7 @@ class MessageOut(BaseModel):
     reactions: Dict[str, List[str]] = {}
     edited: bool = False
     emotion: str = "neutral"
+    emotion_confidence: float = 0.0
 
 
 class ToxicityRequest(BaseModel):
@@ -88,6 +89,7 @@ class ToxicityResult(BaseModel):
     is_flagged: bool
     toxic_words: List[str] = []
     emotion: str = "neutral"
+    emotion_confidence: float = 0.0
     highlighted_words: List[str] = []
     rewrite: Optional[str] = None
     escalation: Optional[dict] = None
@@ -105,6 +107,7 @@ class EscalationResult(BaseModel):
     is_flagged: bool
     toxic_words: List[str] = []
     emotion: str = "neutral"
+    emotion_confidence: float = 0.0
     rewrite: Optional[str] = None
     escalation: dict
     conversation_health: int = 100

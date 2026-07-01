@@ -29,14 +29,6 @@ REWRITE_MAP = {
     "slut": "person", "whore": "person", "cunt": "person",
 }
 
-EMOTION_LEXICON = {
-    "joy": ["happy", "love", "great", "amazing", "wonderful", "awesome", "excellent", "fantastic", "glad", "yay", "haha", "lol"],
-    "anger": ["angry", "furious", "rage", "hate", "mad", "pissed", "annoyed", "frustrated"],
-    "sadness": ["sad", "depressed", "cry", "crying", "unhappy", "miserable", "sorry"],
-    "fear": ["scared", "afraid", "terrified", "worried", "anxious", "nervous", "panic"],
-    "surprise": ["wow", "omg", "shocked", "surprised", "unbelievable"],
-}
-
 _hf_ready = ai_model.is_transformer_ready()
 _ready = _hf_ready
 
@@ -87,29 +79,6 @@ def _predict_transformer(text: str) -> dict | None:
         return {"score": round(toxic_score, 4)}
     except Exception:
         return None
-
-
-def _detect_emotion_transformer(text: str) -> str:
-    pipe = ai_model.get_emotion_pipeline()
-    if pipe is None:
-        return _detect_emotion_lexicon(text)
-    try:
-        results = pipe(text, truncation=True, max_length=512)
-        if isinstance(results, list) and isinstance(results[0], list):
-            results = results[0]
-        best = max(results, key=lambda x: x["score"])
-        return best["label"].lower()
-    except Exception:
-        return _detect_emotion_lexicon(text)
-
-
-def _detect_emotion_lexicon(text: str) -> str:
-    text_lower = text.lower()
-    scores = {}
-    for emotion, keywords in EMOTION_LEXICON.items():
-        scores[emotion] = sum(1 for kw in keywords if kw in text_lower)
-    best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else "neutral"
 
 
 def _build_context_text(text: str, context: list) -> str:
@@ -166,7 +135,6 @@ def rewrite_toxic(text: str) -> str:
 async def analyze(text: str, context: list = None) -> dict:
     ctx_text = _build_context_text(text, context)
     tox = predict_toxicity(ctx_text if context else text)
-    emotion = _detect_emotion_transformer(text)
     rewrite = rewrite_toxic(text) if tox["is_flagged"] else None
     escalation = None
     if context:
@@ -178,7 +146,6 @@ async def analyze(text: str, context: list = None) -> dict:
         "is_flagged": tox["is_flagged"],
         "toxic_words": tox.get("toxic_words", []),
         "highlighted_words": tox.get("toxic_words", []),
-        "emotion": emotion,
         "rewrite": rewrite,
         "escalation": escalation,
     }

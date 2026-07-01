@@ -18,7 +18,7 @@ from models import (
     EscalationRequest, EscalationResult, AdminAction, ConversationHealth,
 )
 import database as db
-import ml_service
+import ai.manager as ai_manager
 import redis_service
 from security import hash_password, verify_password, migrate_password, sanitize_input, validate_file
 from auth import (
@@ -181,7 +181,7 @@ async def list_users(username: str = Depends(get_current_user)):
 
 @app.post("/api/predict", response_model=ToxicityResult)
 async def predict(data: ToxicityRequest, username: str = Depends(get_current_user)):
-    result = await ml_service.analyze(data.text)
+    result = await ai_manager.analyze_message(data.text)
     return ToxicityResult(text=data.text, **result)
 
 
@@ -189,7 +189,7 @@ async def predict(data: ToxicityRequest, username: str = Depends(get_current_use
 async def predict_escalation(data: EscalationRequest, username: str = Depends(get_current_user)):
     recent = await db.get_conversation_messages(username, data.partner, limit=15)
     context = [m.get("text", "") for m in recent]
-    result = await ml_service.analyze(data.text, context=recent)
+    result = await ai_manager.analyze_message(data.text, context=recent)
     from escalation import predict_escalation as calc_escalation
     esc = calc_escalation(recent, result["score"], result["is_flagged"])
     return EscalationResult(
@@ -199,6 +199,7 @@ async def predict_escalation(data: EscalationRequest, username: str = Depends(ge
         is_flagged=result["is_flagged"],
         toxic_words=result.get("toxic_words", []),
         emotion=result.get("emotion", "neutral"),
+        emotion_confidence=result.get("emotion_confidence", 0.0),
         rewrite=result.get("rewrite"),
         escalation=esc,
         conversation_health=esc["conversation_health"],
@@ -207,6 +208,7 @@ async def predict_escalation(data: EscalationRequest, username: str = Depends(ge
 
 @app.post("/api/rewrite")
 async def rewrite(data: RewriteRequest, username: str = Depends(get_current_user)):
+    import ml_service
     result = ml_service.rewrite_toxic(data.text)
     return {"original": data.text, "rewritten": result}
 
@@ -366,7 +368,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 
                     text = sanitize_input(text)
                     recent = await db.get_conversation_messages(username, receiver, limit=10)
-                    tox = await ml_service.analyze(text, context=recent)
+                    tox = await ai_manager.analyze_message(text, context=recent)
 
                     if tox["is_flagged"] and not force_send:
                         from escalation import predict_escalation as calc_escalation
@@ -394,6 +396,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "is_flagged": tox["is_flagged"],
                         "toxic_words": tox.get("toxic_words", []),
                         "emotion": tox.get("emotion", "neutral"),
+                        "emotion_confidence": tox.get("emotion_confidence", 0.0),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,
@@ -417,6 +420,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "is_flagged": tox["is_flagged"],
                         "toxic_words": tox.get("toxic_words", []),
                         "emotion": tox.get("emotion", "neutral"),
+                        "emotion_confidence": tox.get("emotion_confidence", 0.0),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,
@@ -533,11 +537,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 
 @app.get("/")
 async def health():
+    import ai_model
     return {
         "app": "ToxiChat Pro",
         "version": "3.0.0",
         "status": "running",
-        "ml_model": "transformer" if ml_service._hf_ready else "keywords",
+        "ml_model": "transformer" if ai_model.is_transformer_ready() else "keywords",
         "storage": "MongoDB" if not db.is_memory_mode() else "In-Memory ⚠️",
     }
 

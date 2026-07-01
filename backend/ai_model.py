@@ -2,18 +2,15 @@ import os
 import warnings
 
 _toxicity_pipeline = None
-_emotion_pipeline = None
 _toxicity_ready = False
-_emotion_ready = False
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai", "models")
 
 
 def load_all_models():
     global _toxicity_pipeline, _toxicity_ready
-    global _emotion_pipeline, _emotion_ready
 
-    print("[AI] Loading models...")
+    print("[AI] Loading toxicity models...")
 
     try:
         from transformers import pipeline as hf_pipeline, AutoTokenizer, AutoModelForSequenceClassification
@@ -60,25 +57,10 @@ def load_all_models():
         except Exception as e_bert:
             print(f"[WARN] fallback toxic-bert unavailable: {e_bert}")
             _toxicity_ready = False
-    try:
-        from transformers import pipeline as hf_pipeline
-        _emotion_pipeline = hf_pipeline(
-            "text-classification",
-            model="j-hartmann/emotion-english-distilroberta-base",
-            top_k=None,
-            device=-1,
-        )
-        _emotion_ready = True
-        print("[OK] emotion-distilroberta loaded")
-    except Exception as e:
-        print(f"[WARN] emotion model unavailable: {e}")
-        _emotion_ready = False
 
     active = []
     if _toxicity_ready:
-        active.append("toxic-bert")
-    if _emotion_ready:
-        active.append("emotion-distilroberta")
+        active.append("toxic-bert" if "toxic-bert" in locals() else "unbiased-toxic-roberta")
     print(f"[AI] Active models: {', '.join(active)}")
 
 
@@ -86,16 +68,8 @@ def get_toxicity_pipeline():
     return _toxicity_pipeline if _toxicity_ready else None
 
 
-def get_emotion_pipeline():
-    return _emotion_pipeline if _emotion_ready else None
-
-
 def is_transformer_ready():
     return _toxicity_ready
-
-
-def is_emotion_ready():
-    return _emotion_ready
 
 
 load_all_models()
