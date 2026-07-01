@@ -76,6 +76,12 @@ class MessageOut(BaseModel):
     edited: bool = False
     emotion: str = "neutral"
     emotion_confidence: float = 0.0
+    contains_pii: bool = False
+    pii_entities: List[dict] = []
+    risk_score: int = 0
+    risk_level: str = "LOW"
+    risk_reasons: List[str] = []
+    recommendation: str = "Safe to send."
 
 
 class ToxicityRequest(BaseModel):
@@ -90,9 +96,15 @@ class ToxicityResult(BaseModel):
     toxic_words: List[str] = []
     emotion: str = "neutral"
     emotion_confidence: float = 0.0
+    contains_pii: bool = False
+    pii_entities: List[dict] = []
     highlighted_words: List[str] = []
     rewrite: Optional[str] = None
     escalation: Optional[dict] = None
+    risk_score: int = 0
+    risk_level: str = "LOW"
+    risk_reasons: List[str] = []
+    recommendation: str = "Safe to send."
 
 
 class EscalationRequest(BaseModel):
@@ -108,9 +120,15 @@ class EscalationResult(BaseModel):
     toxic_words: List[str] = []
     emotion: str = "neutral"
     emotion_confidence: float = 0.0
+    contains_pii: bool = False
+    pii_entities: List[dict] = []
     rewrite: Optional[str] = None
     escalation: dict
     conversation_health: int = 100
+    risk_score: int = 0
+    risk_level: str = "LOW"
+    risk_reasons: List[str] = []
+    recommendation: str = "Safe to send."
 
 
 class AdminAction(BaseModel):
@@ -144,6 +162,11 @@ class DashboardStats(BaseModel):
     flagged_messages: List[dict] = []
     conversation_health_avg: float = 100.0
     escalation_events: int = 0
+    risk_distribution: dict = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+    critical_conversations: List[dict] = []
+    average_risk: float = 0.0
+    average_toxicity: float = 0.0
+    rewrite_success_rate: float = 0.0
 
 
 class GroupCreate(BaseModel):

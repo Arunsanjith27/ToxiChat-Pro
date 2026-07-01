@@ -200,6 +200,8 @@ async def predict_escalation(data: EscalationRequest, username: str = Depends(ge
         toxic_words=result.get("toxic_words", []),
         emotion=result.get("emotion", "neutral"),
         emotion_confidence=result.get("emotion_confidence", 0.0),
+        contains_pii=result.get("contains_pii", False),
+        pii_entities=result.get("pii_entities", []),
         rewrite=result.get("rewrite"),
         escalation=esc,
         conversation_health=esc["conversation_health"],
@@ -208,9 +210,15 @@ async def predict_escalation(data: EscalationRequest, username: str = Depends(ge
 
 @app.post("/api/rewrite")
 async def rewrite(data: RewriteRequest, username: str = Depends(get_current_user)):
-    import ml_service
-    result = ml_service.rewrite_toxic(data.text)
-    return {"original": data.text, "rewritten": result}
+    import ai.manager as manager
+    import ai.rewrite_service as rewrite_service
+    # Need to run toxicity analysis to validate rewrite
+    analysis = await manager.analyze_message(data.text)
+    result = rewrite_service.rewrite_message(data.text, analysis)
+    
+    # Return original text if rewrite failed to preserve meaning or reduce toxicity
+    rewritten_text = result.get("rewritten_text") or data.text
+    return {"original": data.text, "rewritten": rewritten_text}
 
 
 @app.get("/api/search")
@@ -397,6 +405,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "toxic_words": tox.get("toxic_words", []),
                         "emotion": tox.get("emotion", "neutral"),
                         "emotion_confidence": tox.get("emotion_confidence", 0.0),
+                        "contains_pii": tox.get("contains_pii", False),
+                        "pii_entities": tox.get("pii_entities", []),
+                        "risk_score": tox.get("risk_score", 0),
+                        "risk_level": tox.get("risk_level", "LOW"),
+                        "risk_reasons": tox.get("risk_reasons", []),
+                        "recommendation": tox.get("recommendation", "Safe to send."),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,
@@ -421,6 +435,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "toxic_words": tox.get("toxic_words", []),
                         "emotion": tox.get("emotion", "neutral"),
                         "emotion_confidence": tox.get("emotion_confidence", 0.0),
+                        "contains_pii": tox.get("contains_pii", False),
+                        "pii_entities": tox.get("pii_entities", []),
+                        "risk_score": tox.get("risk_score", 0),
+                        "risk_level": tox.get("risk_level", "LOW"),
+                        "risk_reasons": tox.get("risk_reasons", []),
+                        "recommendation": tox.get("recommendation", "Safe to send."),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,

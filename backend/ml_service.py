@@ -18,16 +18,7 @@ SAFE_WORDS = [
     'thanks', 'thank', 'please', 'welcome', 'sorry', 'okay', 'ok', 'yes', 'no'
 ]
 
-REWRITE_MAP = {
-    "fuck": "heck", "fucking": "freaking", "shit": "crap", "bitch": "person",
-    "asshole": "jerk", "bastard": "fool", "idiot": "person", "stupid": "silly",
-    "dumb": "uninformed", "moron": "person", "retard": "person",
-    "hate": "dislike", "kill": "stop", "die": "go away",
-    "ugly": "not great", "disgusting": "unpleasant", "pathetic": "disappointing",
-    "loser": "person", "worthless": "undervalued", "trash": "not great",
-    "shut up": "please be quiet", "get lost": "please leave",
-    "slut": "person", "whore": "person", "cunt": "person",
-}
+
 
 _hf_ready = ai_model.is_transformer_ready()
 _ready = _hf_ready
@@ -124,18 +115,10 @@ def predict_toxicity(text: str) -> dict:
     }
 
 
-def rewrite_toxic(text: str) -> str:
-    result = text
-    for toxic, safe in REWRITE_MAP.items():
-        pattern = re.compile(re.escape(toxic), re.IGNORECASE)
-        result = pattern.sub(safe, result)
-    return result
-
 
 async def analyze(text: str, context: list = None) -> dict:
     ctx_text = _build_context_text(text, context)
     tox = predict_toxicity(ctx_text if context else text)
-    rewrite = rewrite_toxic(text) if tox["is_flagged"] else None
     escalation = None
     if context:
         from escalation import predict_escalation
@@ -146,6 +129,5 @@ async def analyze(text: str, context: list = None) -> dict:
         "is_flagged": tox["is_flagged"],
         "toxic_words": tox.get("toxic_words", []),
         "highlighted_words": tox.get("toxic_words", []),
-        "rewrite": rewrite,
         "escalation": escalation,
     }

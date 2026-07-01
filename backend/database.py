@@ -298,6 +298,24 @@ async def get_dashboard_stats() -> dict:
     total = len(msgs)
     toxic = sum(1 for m in msgs if m.get("is_flagged", False))
     non_toxic = total - toxic
+    
+    total_risk = 0
+    total_toxicity = 0
+    risk_dist = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+    rewrite_attempts = 0
+    rewrite_successes = 0
+    
+    for m in msgs:
+        total_risk += m.get("risk_score", 0)
+        total_toxicity += m.get("toxicity_score", 0.0)
+        lvl = m.get("risk_level", "LOW")
+        if lvl in risk_dist:
+            risk_dist[lvl] += 1
+            
+        if m.get("is_flagged", False):
+            rewrite_attempts += 1
+            if m.get("rewrite"):
+                rewrite_successes += 1
 
     user_toxic = {}
     for m in msgs:
@@ -334,11 +352,14 @@ async def get_dashboard_stats() -> dict:
     conv_keys = set()
     health_scores = []
     escalation_events = 0
+    critical_convs = []
+    
     for m in msgs:
         if m.get("is_group"):
             continue
         pair = tuple(sorted([m.get("sender", ""), m.get("receiver", "")]))
         conv_keys.add(pair)
+        
     for u1, u2 in list(conv_keys)[:50]:
         conv_msgs = [m for m in msgs if not m.get("is_group") and
                      ((m["sender"] == u1 and m["receiver"] == u2) or
@@ -348,6 +369,10 @@ async def get_dashboard_stats() -> dict:
             health_scores.append(esc["conversation_health"])
             if esc["is_escalating"]:
                 escalation_events += 1
+                
+            # Check if critical conversation
+            if any(m.get("risk_level") == "CRITICAL" for m in conv_msgs[-10:]):
+                critical_convs.append({"participants": [u1, u2], "health": esc["conversation_health"]})
 
     return {
         "total_messages": total,
@@ -362,6 +387,11 @@ async def get_dashboard_stats() -> dict:
         "flagged_messages": flagged,
         "conversation_health_avg": round(sum(health_scores) / max(len(health_scores), 1), 1),
         "escalation_events": escalation_events,
+        "risk_distribution": risk_dist,
+        "critical_conversations": critical_convs,
+        "average_risk": round(total_risk / max(total, 1), 1),
+        "average_toxicity": round(total_toxicity / max(total, 1), 2),
+        "rewrite_success_rate": round(rewrite_successes / max(rewrite_attempts, 1) * 100, 1),
     }
 
 
