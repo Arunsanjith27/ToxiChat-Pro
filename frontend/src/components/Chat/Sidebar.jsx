@@ -71,7 +71,7 @@ export default function Sidebar({ user, contacts, activeChat, setActiveChat, onL
                     {c.is_muted && <ShieldAlert className="w-3 h-3 text-red-400" />}
                   </div>
                   <p className="text-[11px] theme-muted truncate">
-                    {c.is_online ? 'Online' : 'Offline'}
+                    {c.is_online ? 'Online' : c.last_seen ? `Last seen ${new Date(c.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Offline'}
                     {c.reputation_score != null && ` · ${c.reputation_score} rep`}
                   </p>
                 </div>

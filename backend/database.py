@@ -126,22 +126,24 @@ async def update_user_password(username: str, new_hash: str):
         await db.users.update_one({"username": username}, {"$set": {"password": new_hash}})
 
 
-async def set_user_online(username: str, online: bool):
+async def update_last_seen(username: str, timestamp: str):
     if _use_memory:
         for u in _memory_store["users"]:
             if u["username"] == username:
-                u["is_online"] = online
+                u["last_seen"] = timestamp
     else:
         db = await get_db()
-        await db.users.update_one({"username": username}, {"$set": {"is_online": online}})
+        await db.users.update_one({"username": username}, {"$set": {"last_seen": timestamp}})
 
 
 async def get_all_users() -> List[dict]:
+    import presence
     if _use_memory:
         return [{
             "username": u["username"],
             "display_name": u["display_name"],
-            "is_online": u.get("is_online", False),
+            "is_online": presence.is_user_online(u["username"]),
+            "last_seen": u.get("last_seen"),
             "warnings_count": u.get("warnings_count", 0),
             "is_muted": u.get("is_muted", False),
             "avatar_url": u.get("avatar_url"),
@@ -153,7 +155,11 @@ async def get_all_users() -> List[dict]:
     cursor = db.users.find({}, {
         "_id": 0, "password": 0, "mute_history": 0, "email": 0
     })
-    return await cursor.to_list(length=500)
+    
+    users = await cursor.to_list(length=500)
+    for u in users:
+        u["is_online"] = presence.is_user_online(u.get("username", ""))
+    return users
 
 
 async def add_warning(username: str) -> dict:
@@ -431,46 +437,72 @@ async def search_messages(query: str, limit: int = 50) -> List[dict]:
 
 
 async def add_reaction(msg_id: str, emoji: str, username: str) -> dict:
+    from datetime import datetime
+    timestamp = datetime.utcnow().isoformat()
+    
     if _use_memory:
         for m in _memory_store["messages"]:
             if m.get("id") == msg_id:
-                reactions = m.setdefault("reactions", {})
-                users = reactions.setdefault(emoji, [])
-                if username in users:
-                    users.remove(username)
-                    if not users:
-                        del reactions[emoji]
+                # Handle backwards compatibility if it's still a dict
+                if isinstance(m.get("reactions"), dict):
+                    m["reactions"] = []
+                
+                reactions = m.setdefault("reactions", [])
+                
+                existing = next((r for r in reactions if r["username"] == username), None)
+                if existing:
+                    if existing["emoji"] == emoji:
+                        reactions.remove(existing)
+                    else:
+                        existing["emoji"] = emoji
+                        existing["timestamp"] = timestamp
                 else:
-                    users.append(username)
-                return {"reactions": m.get("reactions", {})}
-        return {"reactions": {}}
+                    reactions.append({"username": username, "emoji": emoji, "timestamp": timestamp})
+                    
+                return {"reactions": m.get("reactions", [])}
+        return {"reactions": []}
+        
     db = await get_db()
     doc = await db.messages.find_one({"id": msg_id}, {"_id": 0, "reactions": 1})
-    reactions = (doc or {}).get("reactions", {})
-    users = reactions.get(emoji, [])
-    if username in users:
-        users.remove(username)
-        if not users and emoji in reactions:
-            del reactions[emoji]
+    reactions = (doc or {}).get("reactions", [])
+    
+    if isinstance(reactions, dict):
+        reactions = []
+        
+    existing = next((r for r in reactions if r["username"] == username), None)
+    if existing:
+        if existing["emoji"] == emoji:
+            reactions.remove(existing)
+        else:
+            existing["emoji"] = emoji
+            existing["timestamp"] = timestamp
     else:
-        users.append(username)
-        reactions[emoji] = users
+        reactions.append({"username": username, "emoji": emoji, "timestamp": timestamp})
+        
     await db.messages.update_one({"id": msg_id}, {"$set": {"reactions": reactions}})
     return {"reactions": reactions}
 
 
-async def update_message_text(msg_id: str, new_text: str, username: str) -> bool:
+async def get_message_by_id(msg_id: str) -> Optional[dict]:
     if _use_memory:
         for m in _memory_store["messages"]:
-            if m.get("id") == msg_id and m.get("sender") == username:
-                m["text"] = new_text
-                m["edited"] = True
+            if m.get("id") == msg_id:
+                return m
+        return None
+    db = await get_db()
+    return await db.messages.find_one({"id": msg_id}, {"_id": 0})
+
+async def update_message_full(msg_id: str, sender: str, updates: dict) -> bool:
+    if _use_memory:
+        for m in _memory_store["messages"]:
+            if m.get("id") == msg_id and m.get("sender") == sender:
+                m.update(updates)
                 return True
         return False
     db = await get_db()
     result = await db.messages.update_one(
-        {"id": msg_id, "sender": username},
-        {"$set": {"text": new_text, "edited": True}}
+        {"id": msg_id, "sender": sender},
+        {"$set": updates}
     )
     return result.modified_count > 0
 

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, CheckCheck, Pencil, X } from 'lucide-react';
+import { Check, CheckCheck, Pencil, X, Trash2 } from 'lucide-react';
 
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 function HighlightedText({ text, toxicWords }) {
   if (!toxicWords || toxicWords.length === 0) {
@@ -25,31 +25,60 @@ function HighlightedText({ text, toxicWords }) {
 
 function StatusTicks({ status, isOwn }) {
   if (!isOwn) return null;
-  if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-cyan-400" />;
-  if (status === 'delivered') return <CheckCheck className="w-3.5 h-3.5 text-gray-400" />;
-  return <Check className="w-3.5 h-3.5 text-gray-500" />;
+  if (status === 'read') {
+    return <span className="flex items-center gap-0.5 text-[10px] text-blue-400"><CheckCheck className="w-3.5 h-3.5" /> Read</span>;
+  }
+  if (status === 'delivered') {
+    return <span className="flex items-center gap-0.5 text-[10px] text-gray-300"><CheckCheck className="w-3.5 h-3.5" /> Delivered</span>;
+  }
+  return <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><Check className="w-3.5 h-3.5" /> Sent</span>;
 }
 
-function ReactionBar({ reactions, onReaction, msgId, target }) {
-  if (!reactions || Object.keys(reactions).length === 0) return null;
+function ReactionBar({ reactions, onReaction, msgId, target, currentUsername }) {
+  if (!reactions) return null;
+  
+  let normalized = [];
+  if (Array.isArray(reactions)) {
+    normalized = reactions;
+  } else if (typeof reactions === 'object') {
+    Object.entries(reactions).forEach(([emoji, users]) => {
+      users.forEach(username => {
+        normalized.push({ username, emoji });
+      });
+    });
+  }
+  
+  if (normalized.length === 0) return null;
+
+  const grouped = {};
+  normalized.forEach(r => {
+    if (!grouped[r.emoji]) grouped[r.emoji] = [];
+    grouped[r.emoji].push(r.username);
+  });
+
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {Object.entries(reactions).map(([emoji, users]) => (
-        <button
-          key={emoji}
-          onClick={() => onReaction(msgId, emoji, target)}
-          className="flex items-center gap-0.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-1.5 py-0.5 text-xs transition-colors"
-          title={users.join(', ')}
-        >
-          <span>{emoji}</span>
-          <span className="text-gray-400 text-[10px]">{users.length}</span>
-        </button>
-      ))}
+      {Object.entries(grouped).map(([emoji, users]) => {
+        const hasReacted = users.includes(currentUsername);
+        return (
+          <button
+            key={emoji}
+            onClick={() => onReaction(msgId, emoji, target)}
+            className={`flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs transition-colors ${
+              hasReacted ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-white/10 hover:bg-white/20 border border-white/10'
+            }`}
+            title={users.join(', ')}
+          >
+            <span>{emoji}</span>
+            <span className={hasReacted ? 'text-emerald-400 text-[10px]' : 'text-gray-400 text-[10px]'}>{users.length}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-export default function MessageBubble({ message, isOwn, onReaction, onEdit }) {
+export default function MessageBubble({ message, isOwn, currentUsername, onReaction, onEdit, onDelete }) {
   const [showReactions, setShowReactions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.text);
@@ -63,6 +92,35 @@ export default function MessageBubble({ message, isOwn, onReaction, onEdit }) {
     }
     setIsEditing(false);
   };
+
+
+  if (message.deleted) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        layout
+        className={`flex w-full group ${isOwn ? 'justify-end' : 'justify-start'}`}
+      >
+        <div className={`relative max-w-[70%] sm:max-w-[60%] flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+          <div className={`px-5 py-3 rounded-2xl shadow-lg relative overflow-hidden backdrop-blur-md bg-white/5 text-gray-500 italic border border-white/5 ${
+            isOwn ? 'rounded-br-sm' : 'rounded-bl-sm'
+          }`}>
+            <p className="relative z-10 leading-relaxed text-[15px]">
+              🚫 This message was deleted.
+            </p>
+          </div>
+          <div className={`flex items-center gap-2 mt-1.5 px-1 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-gray-600 font-medium">
+                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -145,7 +203,7 @@ export default function MessageBubble({ message, isOwn, onReaction, onEdit }) {
           )}
         </AnimatePresence>
 
-        <ReactionBar reactions={message.reactions} onReaction={onReaction} msgId={message.id} target={target} />
+        <ReactionBar reactions={message.reactions} onReaction={onReaction} msgId={message.id} target={target} currentUsername={currentUsername} />
 
         <div className={`flex items-center gap-2 mt-1.5 px-1 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
           <div className="flex items-center gap-1">
@@ -153,18 +211,27 @@ export default function MessageBubble({ message, isOwn, onReaction, onEdit }) {
               {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             <StatusTicks status={message.status} isOwn={isOwn} />
-            {message.edited && <span className="text-[9px] text-gray-500 italic">edited</span>}
+            {message.edited && <span className="text-[9px] text-gray-500 italic">(edited)</span>}
           </div>
 
           {/* Edit button for own messages */}
           {isOwn && !isEditing && (
-            <button
-              onClick={() => { setEditText(message.text); setIsEditing(true); }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/10 rounded"
-              title="Edit message"
-            >
-              <Pencil className="w-3 h-3 text-gray-400" />
-            </button>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+              <button
+                onClick={() => { setEditText(message.text); setIsEditing(true); }}
+                className="p-1 hover:bg-white/10 rounded"
+                title="Edit message"
+              >
+                <Pencil className="w-3 h-3 text-gray-400" />
+              </button>
+              <button
+                onClick={() => onDelete?.(message.id, target)}
+                className="p-1 hover:bg-red-500/20 rounded group/del"
+                title="Delete message"
+              >
+                <Trash2 className="w-3 h-3 text-gray-400 group-hover/del:text-red-400 transition-colors" />
+              </button>
+            </div>
           )}
 
           {message.emotion && message.emotion !== 'neutral' && (

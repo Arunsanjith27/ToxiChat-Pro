@@ -18,6 +18,7 @@ from models import (
     EscalationRequest, EscalationResult, AdminAction, ConversationHealth,
 )
 import database as db
+import presence
 import ai.manager as ai_manager
 import redis_service
 from security import hash_password, verify_password, migrate_password, sanitize_input, validate_file
@@ -290,44 +291,55 @@ async def admin_user_action(data: AdminAction, admin: str = Depends(require_admi
 
 class ConnectionManager:
     def __init__(self):
-        self.connections: Dict[str, WebSocket] = {}
         self.active_chats: Dict[str, str] = {}
 
     async def connect(self, username: str, websocket: WebSocket):
         await websocket.accept()
-        self.connections[username] = websocket
-        await db.set_user_online(username, True)
-        await redis_service.set_user_presence(username, True)
-        await self.broadcast_system(f"{username} is online", exclude=username)
+        is_first = presence.add_connection(username, websocket)
+        if is_first:
+            await redis_service.set_user_presence(username, True)
+            # Broadcast presence_online
+            await self.broadcast_system(f"{username} is online", exclude=username)
+            await self.broadcast({"type": "presence_online", "username": username}, exclude=username)
 
-    async def disconnect(self, username: str):
-        self.connections.pop(username, None)
+    async def disconnect(self, username: str, websocket: WebSocket):
         self.active_chats.pop(username, None)
-        await db.set_user_online(username, False)
-        await redis_service.set_user_presence(username, False)
-        await self.broadcast_system(f"{username} is offline")
+        is_last = presence.remove_connection(username, websocket)
+        if is_last:
+            last_seen_ts = datetime.utcnow().isoformat() + "Z"
+            await db.update_last_seen(username, last_seen_ts)
+            await redis_service.set_user_presence(username, False)
+            await self.broadcast_system(f"{username} is offline")
+            await self.broadcast({"type": "presence_offline", "username": username, "last_seen": last_seen_ts})
 
     async def send_to_user(self, username: str, data: dict):
-        ws = self.connections.get(username)
-        if ws:
+        conns = presence._active_connections.get(username, set())
+        dead = []
+        for ws in conns:
             try:
                 await ws.send_json(data)
             except Exception:
-                self.connections.pop(username, None)
+                dead.append(ws)
+        for ws in dead:
+            presence.remove_connection(username, ws)
 
     async def broadcast_to_group(self, group_members: list, data: dict, exclude: str = ""):
         for member in group_members:
             if member != exclude:
                 await self.send_to_user(member, data)
 
+    async def broadcast(self, data: dict, exclude: str = ""):
+        for uname, conns in list(presence._active_connections.items()):
+            if uname != exclude:
+                for ws in conns:
+                    try:
+                        await ws.send_json(data)
+                    except Exception:
+                        pass
+
     async def broadcast_system(self, message: str, exclude: str = ""):
         data = {"type": "system", "message": message, "timestamp": datetime.utcnow().isoformat()}
-        for uname, ws in list(self.connections.items()):
-            if uname != exclude:
-                try:
-                    await ws.send_json(data)
-                except Exception:
-                    self.connections.pop(uname, None)
+        await self.broadcast(data, exclude)
 
 
 manager = ConnectionManager()
@@ -454,7 +466,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         if group:
                             await manager.broadcast_to_group(group["members"], payload, exclude=username)
                     else:
-                        if receiver in manager.connections:
+                        if presence.is_user_online(receiver):
                             payload["status"] = "delivered"
                             await db.update_message_status(msg["id"], "delivered")
                             await manager.send_to_user(username, {
@@ -485,22 +497,22 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                                 "until": warning_result.get("mute_until"),
                             })
 
-                elif msg_type == "typing":
+                elif msg_type in ["typing_start", "typing_stop"]:
                     receiver = data.get("receiver", "")
-                    await redis_service.set_typing(username, receiver)
-                    await manager.send_to_user(receiver, {"type": "typing", "sender": username})
+                    # Relay event directly to receiver without MongoDB storage
+                    await manager.send_to_user(receiver, {"type": msg_type, "sender": username})
 
                 elif msg_type == "active_chat":
                     partner = data.get("partner", "")
                     manager.active_chats[username] = partner
 
-                elif msg_type == "seen":
-                    msg_id = data.get("id", "")
+                elif msg_type == "message_delivered":
+                    msg_id = data.get("message_id", "")
                     sender = data.get("sender", "")
                     if msg_id:
-                        await db.update_message_status(msg_id, "seen")
+                        await db.update_message_status(msg_id, "delivered")
                         await manager.send_to_user(sender, {
-                            "type": "status_update", "id": msg_id, "status": "seen"
+                            "type": "message_delivered", "message_id": msg_id, "status": "delivered"
                         })
 
                 elif msg_type == "reaction":
@@ -524,19 +536,122 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     msg_id = data.get("msg_id", "")
                     new_text = data.get("text", "").strip()
                     target = data.get("target", "")
+                    
                     if msg_id and new_text:
-                        success = await db.update_message_text(msg_id, new_text, username)
-                        if success:
-                            edit_payload = {
-                                "type": "message_edited",
-                                "msg_id": msg_id,
-                                "text": new_text,
-                                "by": username,
-                            }
-                            await manager.send_to_user(username, edit_payload)
-                            if target and target != username:
-                                await manager.send_to_user(target, edit_payload)
-
+                        original_msg = await db.get_message_by_id(msg_id)
+                        if original_msg and original_msg.get("sender") == username:
+                            msg_time = datetime.fromisoformat(original_msg["timestamp"].replace("Z", "+00:00")) if original_msg.get("timestamp") else datetime.utcnow()
+                            # 15 minutes edit window (use timezone naive utcnow)
+                            if (datetime.utcnow() - msg_time.replace(tzinfo=None)).total_seconds() <= 15 * 60:
+                                new_text = sanitize_input(new_text)
+                                recent = await db.get_conversation_messages(username, target, limit=10) if target else []
+                                tox = await ai_manager.analyze_message(new_text, context=recent)
+                                
+                                edited_at = datetime.utcnow().isoformat()
+                                updates = {
+                                    "text": new_text,
+                                    "edited": True,
+                                    "edited_at": edited_at,
+                                    "toxicity_score": tox["score"],
+                                    "toxicity_label": tox["label"],
+                                    "is_flagged": tox["is_flagged"],
+                                    "toxic_words": tox.get("toxic_words", []),
+                                    "emotion": tox.get("emotion", "neutral"),
+                                    "emotion_confidence": tox.get("emotion_confidence", 0.0),
+                                    "contains_pii": tox.get("contains_pii", False),
+                                    "pii_entities": tox.get("pii_entities", []),
+                                    "risk_score": tox.get("risk_score", 0),
+                                    "risk_level": tox.get("risk_level", "LOW"),
+                                    "risk_reasons": tox.get("risk_reasons", []),
+                                    "recommendation": tox.get("recommendation", "Safe to send."),
+                                }
+                                
+                                success = await db.update_message_full(msg_id, username, updates)
+                                if success:
+                                    edit_payload = {
+                                        "type": "message_edited",
+                                        "msg_id": msg_id,
+                                        "by": username,
+                                    }
+                                    edit_payload.update(updates)
+                                    
+                                    await manager.send_to_user(username, edit_payload)
+                                    if target and target != username:
+                                        await manager.send_to_user(target, edit_payload)
+                            else:
+                                await manager.send_to_user(username, {
+                                    "type": "error", "message": "Message edit window (15 minutes) has expired."
+                                })
+                
+                elif msg_type == "delete_message":
+                    msg_id = data.get("msg_id", "")
+                    target = data.get("target", "")
+                    
+                    if msg_id:
+                        original_msg = await db.get_message_by_id(msg_id)
+                        if original_msg:
+                            if original_msg.get("deleted"):
+                                await manager.send_to_user(username, {
+                                    "type": "delete_error", "message": "Message is already deleted."
+                                })
+                            elif original_msg.get("sender") != username:
+                                await manager.send_to_user(username, {
+                                    "type": "delete_error", "message": "Cannot delete another user's message."
+                                })
+                            else:
+                                msg_time = datetime.fromisoformat(original_msg["timestamp"].replace("Z", "+00:00")) if original_msg.get("timestamp") else datetime.utcnow()
+                                if (datetime.utcnow() - msg_time.replace(tzinfo=None)).total_seconds() <= 15 * 60:
+                                    deleted_at = datetime.utcnow().isoformat()
+                                    updates = {
+                                        "deleted": True,
+                                        "deleted_at": deleted_at,
+                                        "deleted_by": username
+                                    }
+                                    success = await db.update_message_full(msg_id, username, updates)
+                                    if success:
+                                        delete_payload = {
+                                            "type": "message_deleted",
+                                            "message_id": msg_id,
+                                            "deleted": True,
+                                            "deleted_at": deleted_at
+                                        }
+                                        await manager.send_to_user(username, delete_payload)
+                                        if target and target != username:
+                                            await manager.send_to_user(target, delete_payload)
+                                else:
+                                    await manager.send_to_user(username, {
+                                        "type": "delete_error", "message": "Message delete window (15 minutes) has expired."
+                                    })
+                                    
+                elif msg_type == "message_read":
+                    msg_id = data.get("msg_id", "")
+                    sender = data.get("sender", "")
+                    
+                    if msg_id and sender:
+                        original_msg = await db.get_message_by_id(msg_id)
+                        if original_msg:
+                            # Only the receiver can mark the message as read
+                            if original_msg.get("receiver") == username:
+                                if original_msg.get("status") != "read":
+                                    read_at = datetime.utcnow().isoformat()
+                                    updates = {
+                                        "status": "read",
+                                        "read_at": read_at
+                                    }
+                                    # the message belongs to `sender`, so we must pass sender to update_message_full
+                                    success = await db.update_message_full(msg_id, sender, updates)
+                                    if success:
+                                        read_payload = {
+                                            "type": "message_read",
+                                            "message_id": msg_id,
+                                            "status": "read",
+                                            "read_at": read_at
+                                        }
+                                        # Send back to receiver (in case they have multiple tabs)
+                                        await manager.send_to_user(username, read_payload)
+                                        # Send to original sender so they see the blue ticks
+                                        await manager.send_to_user(sender, read_payload)
+                            
                 elif msg_type == "get_users":
                     users = await db.get_all_users()
                     await websocket.send_json({"type": "users_list", "users": users})
@@ -549,10 +664,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 })
 
     except WebSocketDisconnect:
-        await manager.disconnect(username)
+        await manager.disconnect(username, websocket)
     except Exception as e:
         print(f"WebSocket fatal error for {username}: {e}")
-        await manager.disconnect(username)
+        await manager.disconnect(username, websocket)
 
 
 @app.get("/")

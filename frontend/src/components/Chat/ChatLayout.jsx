@@ -47,6 +47,8 @@ export default function ChatLayout() {
 
   const wsRef = useRef(null);
   const typingTimeoutRef = useRef({});
+  const outboundTypingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
   const activeChatRef = useRef(activeChat);
 
   useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
@@ -88,9 +90,10 @@ export default function ChatLayout() {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(data.sender, { body: data.text || '[message]' });
           }
-          if (data.sender === activeChatRef.current?.username) {
-            ws.send(JSON.stringify({ type: 'seen', id: data.id, sender: data.sender }));
-          } else {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'message_delivered', message_id: data.id, sender: data.sender }));
+          }
+          if (data.sender !== activeChatRef.current?.username) {
             setUnreadCounts(prev => ({
               ...prev,
               [data.sender]: (prev[data.sender] || 0) + 1
@@ -104,13 +107,35 @@ export default function ChatLayout() {
       } else if (data.type === 'toxicity_warning') {
         setReceiverWarning(data);
         setTimeout(() => setReceiverWarning(null), 5000);
-      } else if (data.type === 'typing') {
+      } else if (data.type === 'typing_start') {
         const sender = data.sender;
         setTypingUsers(prev => ({ ...prev, [sender]: true }));
         if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
         typingTimeoutRef.current[sender] = setTimeout(() => {
           setTypingUsers(prev => ({ ...prev, [sender]: false }));
         }, 3000);
+      } else if (data.type === 'typing_stop') {
+        const sender = data.sender;
+        setTypingUsers(prev => ({ ...prev, [sender]: false }));
+        if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
+      } else if (data.type === 'presence_online') {
+        setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: true } : c));
+        if (activeChatRef.current?.username === data.username) {
+            setActiveChat(prev => ({ ...prev, is_online: true }));
+        }
+      } else if (data.type === 'presence_offline') {
+        setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: false, last_seen: data.last_seen } : c));
+        if (activeChatRef.current?.username === data.username) {
+            setActiveChat(prev => ({ ...prev, is_online: false, last_seen: data.last_seen }));
+        }
+      } else if (data.type === 'message_delivered') {
+        setMessages(prev => prev.map(m =>
+          m.id === data.message_id && m.status !== 'read' ? { ...m, status: data.status } : m
+        ));
+      } else if (data.type === 'message_read') {
+        setMessages(prev => prev.map(m =>
+          m.id === data.message_id ? { ...m, status: data.status, read_at: data.read_at } : m
+        ));
       } else if (data.type === 'status_update') {
         setMessages(prev => prev.map(m =>
           m.id === data.id ? { ...m, status: data.status } : m
@@ -121,8 +146,31 @@ export default function ChatLayout() {
         ));
       } else if (data.type === 'message_edited') {
         setMessages(prev => prev.map(m =>
-          m.id === data.msg_id ? { ...m, text: data.text, edited: true } : m
+          m.id === data.msg_id ? { 
+            ...m, 
+            text: data.text, 
+            edited: true, 
+            edited_at: data.edited_at,
+            toxicity_score: data.toxicity_score,
+            toxicity_label: data.toxicity_label,
+            is_flagged: data.is_flagged,
+            toxic_words: data.toxic_words,
+            emotion: data.emotion,
+            emotion_confidence: data.emotion_confidence,
+            contains_pii: data.contains_pii,
+            pii_entities: data.pii_entities,
+            risk_score: data.risk_score,
+            risk_level: data.risk_level,
+            risk_reasons: data.risk_reasons,
+            recommendation: data.recommendation
+          } : m
         ));
+      } else if (data.type === 'message_deleted') {
+        setMessages(prev => prev.map(m =>
+          m.id === data.message_id ? { ...m, deleted: true, deleted_at: data.deleted_at } : m
+        ));
+      } else if (data.type === 'delete_error') {
+        console.error("Delete error:", data.message);
       } else if (data.type === 'muted') {
         setIsMuted(true);
         setMuteMessage(data.message);
@@ -187,9 +235,29 @@ export default function ChatLayout() {
     setPreSendWarning(null);
   };
 
-  const sendTyping = useCallback(() => {
+  const sendTypingStart = useCallback(() => {
     if (!activeChat || !wsRef.current) return;
-    wsRef.current.send(JSON.stringify({ type: 'typing', receiver: activeChat.username }));
+    if (isTypingRef.current) {
+        // Just refresh the outbound timeout
+        if (outboundTypingTimeoutRef.current) clearTimeout(outboundTypingTimeoutRef.current);
+        outboundTypingTimeoutRef.current = setTimeout(() => sendTypingStop(), 3000);
+        return;
+    }
+    isTypingRef.current = true;
+    wsRef.current.send(JSON.stringify({ type: 'typing_start', receiver: activeChat.username }));
+    
+    // Auto-stop after 3 seconds of inactivity
+    if (outboundTypingTimeoutRef.current) clearTimeout(outboundTypingTimeoutRef.current);
+    outboundTypingTimeoutRef.current = setTimeout(() => sendTypingStop(), 3000);
+  }, [activeChat]);
+
+  const sendTypingStop = useCallback(() => {
+    if (!activeChat || !wsRef.current) return;
+    if (!isTypingRef.current) return;
+    
+    isTypingRef.current = false;
+    if (outboundTypingTimeoutRef.current) clearTimeout(outboundTypingTimeoutRef.current);
+    wsRef.current.send(JSON.stringify({ type: 'typing_stop', receiver: activeChat.username }));
   }, [activeChat]);
 
   const sendReaction = useCallback((msgId, emoji, target) => {
@@ -200,6 +268,16 @@ export default function ChatLayout() {
   const sendEdit = useCallback((msgId, newText, target) => {
     if (!wsRef.current) return;
     wsRef.current.send(JSON.stringify({ type: 'edit_message', msg_id: msgId, text: newText, target }));
+  }, []);
+
+  const sendDelete = useCallback((msgId, target) => {
+    if (!wsRef.current) return;
+    wsRef.current.send(JSON.stringify({ type: 'delete_message', msg_id: msgId, target }));
+  }, []);
+
+  const sendReadReceipt = useCallback((msgId, sender) => {
+    if (!wsRef.current) return;
+    wsRef.current.send(JSON.stringify({ type: 'message_read', msg_id: msgId, sender }));
   }, []);
 
   const chatMessages = messages.filter(m =>
@@ -264,9 +342,12 @@ export default function ChatLayout() {
             typingUser={typingUser}
             isMuted={isMuted}
             muteMessage={muteMessage}
-            onTyping={sendTyping}
+            onTypingStart={sendTypingStart}
+            onTypingStop={sendTypingStop}
             onReaction={sendReaction}
             onEdit={sendEdit}
+            onDelete={sendDelete}
+            onReadReceipt={sendReadReceipt}
             conversationHealth={conversationHealth}
           />
         )}

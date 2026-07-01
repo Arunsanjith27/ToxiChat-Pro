@@ -28,10 +28,27 @@ function TypingIndicator({ sender }) {
   );
 }
 
-export default function ChatWindow({ user, activeChat, messages, input, setInput, sendMessage, receiverWarning, typingUser, isMuted, muteMessage, onTyping, onReaction, onEdit, conversationHealth }) {
+export default function ChatWindow({
+  user,
+  activeChat,
+  messages,
+  input,
+  setInput,
+  sendMessage,
+  receiverWarning,
+  typingUser,
+  isMuted,
+  muteMessage,
+  onTypingStart,
+  onTypingStop,
+  onReaction,
+  onEdit,
+  onDelete,
+  onReadReceipt,
+  conversationHealth
+}) {
   const token = user?.access_token;
   const messagesEndRef = useRef(null);
-  const typingDebounce = useRef(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -41,11 +58,27 @@ export default function ChatWindow({ user, activeChat, messages, input, setInput
   };
   useEffect(scrollToBottom, [messages, typingUser]);
 
+  useEffect(() => {
+    if (activeChat && messages) {
+      messages.forEach(m => {
+        // If we are the receiver and it's not read yet, mark it
+        if (m.receiver === user.username && m.status !== 'read') {
+          onReadReceipt?.(m.id, m.sender);
+        }
+      });
+    }
+  }, [activeChat, messages, user.username, onReadReceipt]);
+
   const handleInputChange = useCallback((e) => {
     setInput(e.target.value);
-    if (typingDebounce.current) clearTimeout(typingDebounce.current);
-    typingDebounce.current = setTimeout(() => onTyping?.(), 300);
-  }, [setInput, onTyping]);
+    onTypingStart?.();
+  }, [setInput, onTypingStart]);
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    onTypingStop?.();
+    sendMessage(e);
+  };
 
   const handleSearch = useCallback(async (q) => {
     setSearchQuery(q);
@@ -85,7 +118,13 @@ export default function ChatWindow({ user, activeChat, messages, input, setInput
         <div className="flex-1">
           <h2 className="theme-text font-semibold flex items-center gap-2">
             {activeChat.display_name}
-            {activeChat.is_online && <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-500/20 text-emerald-400">Online</span>}
+            {activeChat.is_online ? (
+              <span className="text-emerald-400 text-xs font-medium flex items-center gap-1">🟢 Online</span>
+            ) : activeChat.last_seen ? (
+              <span className="text-gray-400 text-xs font-medium flex items-center gap-1">
+                ⚫ Last seen {new Date(activeChat.last_seen).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(activeChat.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : null}
           </h2>
           <p className="text-xs theme-muted">
             {typingUser === activeChat.username ? (
@@ -182,8 +221,10 @@ export default function ChatWindow({ user, activeChat, messages, input, setInput
               key={m.id || i}
               message={m}
               isOwn={m.sender === user.username}
+              currentUsername={user.username}
               onReaction={onReaction}
               onEdit={onEdit}
+              onDelete={onDelete}
             />
           ))}
         </AnimatePresence>
@@ -194,7 +235,7 @@ export default function ChatWindow({ user, activeChat, messages, input, setInput
       </div>
 
       <div className="p-4 border-t border-space-border bg-black/40 backdrop-blur-md relative z-20">
-        <form onSubmit={sendMessage} className="flex gap-2">
+        <form onSubmit={handleSendMessage} className="flex gap-2">
           <input
             value={input}
             onChange={handleInputChange}

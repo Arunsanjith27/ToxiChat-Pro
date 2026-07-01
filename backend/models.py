@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     display_name: str
     created_at: str
     is_online: bool = False
+    last_seen: Optional[str] = None
     warnings_count: int = 0
     is_muted: bool = False
     avatar_url: Optional[str] = None
@@ -72,8 +73,13 @@ class MessageOut(BaseModel):
     is_flagged: bool = False
     toxic_words: List[str] = []
     status: str = "sent"
-    reactions: Dict[str, List[str]] = {}
+    reactions: List[dict] = []
+    read_at: Optional[str] = None
     edited: bool = False
+    edited_at: Optional[str] = None
+    deleted: bool = False
+    deleted_at: Optional[str] = None
+    deleted_by: Optional[str] = None
     emotion: str = "neutral"
     emotion_confidence: float = 0.0
     contains_pii: bool = False
