@@ -121,8 +121,8 @@ async def analyze(text: str, context: list = None) -> dict:
     tox = predict_toxicity(ctx_text if context else text)
     escalation = None
     if context:
-        from escalation import predict_escalation
-        escalation = predict_escalation(context, tox["score"], tox["is_flagged"])
+        from ai.escalation_engine import predict_escalation
+        escalation = predict_escalation(context, {"average_risk_score": tox["score"] * 100})
     return {
         "score": tox["score"],
         "label": tox["label"],

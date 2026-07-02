@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, CheckCheck, Pencil, X, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Pencil, X, Trash2, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
@@ -74,6 +74,84 @@ function ReactionBar({ reactions, onReaction, msgId, target, currentUsername }) 
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function AIExplanationCard({ explanation }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!explanation) return null;
+
+  return (
+    <div className="mt-2 w-full max-w-sm rounded-xl overflow-hidden border border-gray-700/50 bg-gray-800/80 backdrop-blur-md shadow-lg">
+      <button 
+        onClick={() => setExpanded(!expanded)} 
+        className="w-full flex items-center justify-between p-2.5 bg-gray-700/30 hover:bg-gray-700/50 transition-colors text-xs font-medium text-gray-300"
+      >
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="w-4 h-4 text-indigo-400" />
+          <span>AI Reasoning (Risk: {explanation.overall_risk})</span>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden text-xs text-gray-300"
+          >
+            <div className="p-3 border-t border-gray-700/50 space-y-3">
+              <div className="flex justify-between items-center text-[10px] text-gray-400 uppercase font-semibold">
+                <span>Confidence: {(explanation.confidence * 100).toFixed(0)}%</span>
+                <span>Score: {explanation.risk_score}/100</span>
+              </div>
+              
+              <div>
+                <strong className="text-gray-200 mb-1 block">Primary Reasons</strong>
+                <ul className="space-y-1">
+                  {explanation.primary_reasons.map((r, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${
+                        r.severity === 'HIGH' ? 'bg-red-400' : 
+                        r.severity === 'MEDIUM' ? 'bg-amber-400' : 'bg-emerald-400'
+                      }`} />
+                      <span>{r.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <strong className="text-gray-200 mb-1 block">Severity Breakdown</strong>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {Object.entries(explanation.severity_breakdown).map(([key, val]) => (
+                    <div key={key} className="flex justify-between items-center bg-gray-900/50 px-2 py-1 rounded">
+                      <span className="capitalize text-gray-400">{key}</span>
+                      <span className={`font-semibold ${
+                        val === 'HIGH' ? 'text-red-400' : val === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'
+                      }`}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {explanation.recommendations.length > 0 && (
+                <div>
+                  <strong className="text-gray-200 mb-1 block">Recommendations</strong>
+                  <ul className="list-disc list-inside text-gray-400 space-y-0.5">
+                    {explanation.recommendations.map((rec, i) => (
+                      <li key={i}>{rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -252,6 +330,12 @@ export default function MessageBubble({ message, isOwn, currentUsername, onReact
             </span>
           )}
         </div>
+        
+        {message.explanation && (
+          <div className={`flex w-full mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+            <AIExplanationCard explanation={message.explanation} />
+          </div>
+        )}
       </div>
     </motion.div>
   );

@@ -15,9 +15,10 @@ async def init_redis():
         _redis = aioredis.from_url(redis_url, decode_responses=True)
         await _redis.ping()
         _use_memory = False
-        print(f"✅ Redis connected: {redis_url}")
+        print(f"Redis connected: {redis_url}")
     except Exception as e:
-        print(f"⚠️ Redis unavailable ({e}), using in-memory cache")
+        print(f"[WARNING] Redis unavailable ({e}), using in-memory cache")
+        print("[WARNING] WARNING: Rate limiting will NOT persist across restarts!")
         _use_memory = True
 
 
@@ -78,3 +79,39 @@ async def increment_rate(key: str, window: int = 60) -> int:
     pipe.expire(f"rate:{key}", window)
     results = await pipe.execute()
     return results[0]
+
+async def record_failed_login(username: str, window: int = 900) -> int:
+    if _use_memory:
+        now = datetime.utcnow().timestamp()
+        cache_key = f"failed_login:{username}"
+        if cache_key not in _memory_cache:
+            _memory_cache[cache_key] = []
+        # Keep only failures within the window
+        _memory_cache[cache_key] = [t for t in _memory_cache[cache_key] if now - t < window]
+        _memory_cache[cache_key].append(now)
+        return len(_memory_cache[cache_key])
+    
+    pipe = _redis.pipeline()
+    pipe.incr(f"failed_login:{username}")
+    pipe.expire(f"failed_login:{username}", window)
+    results = await pipe.execute()
+    return results[0]
+
+async def check_lockout(username: str, threshold: int = 5) -> bool:
+    if _use_memory:
+        cache_key = f"failed_login:{username}"
+        fails = len(_memory_cache.get(cache_key, []))
+        return fails >= threshold
+        
+    val = await _redis.get(f"failed_login:{username}")
+    if val and int(val) >= threshold:
+        return True
+    return False
+
+async def clear_failed_logins(username: str):
+    if _use_memory:
+        cache_key = f"failed_login:{username}"
+        if cache_key in _memory_cache:
+            _memory_cache[cache_key] = []
+    else:
+        await _redis.delete(f"failed_login:{username}")

@@ -88,7 +88,8 @@ class MessageOut(BaseModel):
     risk_level: str = "LOW"
     risk_reasons: List[str] = []
     recommendation: str = "Safe to send."
-
+    explanation: Optional[dict] = None
+    embedding: Optional[List[float]] = None
 
 class ToxicityRequest(BaseModel):
     text: str
@@ -111,7 +112,8 @@ class ToxicityResult(BaseModel):
     risk_level: str = "LOW"
     risk_reasons: List[str] = []
     recommendation: str = "Safe to send."
-
+    explanation: Optional[dict] = None
+    embedding: Optional[List[float]] = None
 
 class EscalationRequest(BaseModel):
     text: str
@@ -135,7 +137,7 @@ class EscalationResult(BaseModel):
     risk_level: str = "LOW"
     risk_reasons: List[str] = []
     recommendation: str = "Safe to send."
-
+    explanation: Optional[dict] = None
 
 class AdminAction(BaseModel):
     username: str
@@ -178,3 +180,81 @@ class DashboardStats(BaseModel):
 class GroupCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
     members: List[str]
+
+class ConversationAnalyticsResult(BaseModel):
+    total_messages: int
+    toxic_messages: int
+    overall_toxicity_ratio: float
+    emotion_distribution: dict
+    pii_instances: int
+    average_risk_score: float
+    rewrites_accepted: int
+    conversation_health_score: int
+    critical_events: list
+    conversation_state: str
+
+class ImageAnalysisResponse(BaseModel):
+    image: dict
+    ocr: dict
+    vision: dict
+    text_analysis: dict
+    risk: dict
+    explanation: dict
+
+class AudioAnalysisResponse(BaseModel):
+    audio: dict
+    transcript: dict
+    text_analysis: dict
+    risk: dict
+    explanation: dict
+    metadata: dict
+
+class EscalationPredictionResponse(BaseModel):
+    prediction: dict
+    timeline: dict
+    reasons: list
+    recommendations: list
+    metadata: dict
+
+class CopilotRequest(BaseModel):
+    conversation_id: str
+    question: str
+
+class CopilotResponse(BaseModel):
+    answer: str
+    confidence: float
+    sources: list
+    recommendations: list
+    metadata: dict
+
+class CreateIncidentRequest(BaseModel):
+    conversation_id: str
+    priority: str
+
+class UpdateIncidentStatusRequest(BaseModel):
+    status: str
+
+class AssignIncidentRequest(BaseModel):
+    assignee: str
+
+class AddIncidentNoteRequest(BaseModel):
+    content: str
+    internal_only: bool = True
+
+class AuditLogEntry(BaseModel):
+    audit_id: str
+    timestamp: str
+    actor_id: str
+    actor_username: str
+    actor_role: str
+    action: str
+    resource_type: str
+    resource_id: str
+    incident_id: Optional[str]
+    conversation_id: Optional[str]
+    status: str
+    description: str
+    metadata: dict
+
+class GenerateReportRequest(BaseModel):
+    incident_id: str

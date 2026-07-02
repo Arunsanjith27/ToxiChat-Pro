@@ -55,16 +55,16 @@ async def get_db():
             await _db.messages.create_index([("sender", 1), ("receiver", 1), ("timestamp", -1)])
             await _db.reset_tokens.create_index("token", unique=True)
             await _db.reset_tokens.create_index("expires_at", expireAfterSeconds=0)
-            print(f"✅ MongoDB connected: {DB_NAME} (attempt {attempt})")
+            print(f"[OK] MongoDB connected: {DB_NAME} (attempt {attempt})")
             return _db
         except Exception as e:
             last_err = e
-            print(f"⚠️ MongoDB attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            print(f"[WARN] MongoDB attempt {attempt}/{MAX_RETRIES} failed: {e}")
             if attempt < MAX_RETRIES:
                 await asyncio.sleep(RETRY_DELAY)
 
-    print(f"❌ MongoDB unavailable after {MAX_RETRIES} attempts — using in-memory storage")
-    print(f"❌ WARNING: Data will NOT persist across restarts!")
+    print(f"MongoDB unavailable after {MAX_RETRIES} attempts — using in-memory storage")
+    print(f"WARNING: Data will NOT persist across restarts!")
     _use_memory = True
     _db = "memory"
     return None
@@ -354,7 +354,7 @@ async def get_dashboard_stats() -> dict:
                 "score": m.get("toxicity_score", 0), "timestamp": m.get("timestamp")}
                for m in msgs if m.get("is_flagged")][-20:]
 
-    from escalation import predict_escalation
+    from ai.escalation_engine import predict_escalation
     conv_keys = set()
     health_scores = []
     escalation_events = 0
@@ -371,9 +371,9 @@ async def get_dashboard_stats() -> dict:
                      ((m["sender"] == u1 and m["receiver"] == u2) or
                       (m["sender"] == u2 and m["receiver"] == u1))]
         if conv_msgs:
-            esc = predict_escalation(conv_msgs[-10:], 0, False)
-            health_scores.append(esc["conversation_health"])
-            if esc["is_escalating"]:
+            esc = predict_escalation(conv_msgs[-10:], {})
+            health_scores.append(100 - (esc["prediction"]["probability"] * 100))
+            if esc["prediction"]["trend"] == "ESCALATING" or esc["prediction"]["predicted_state"] in ["HIGH", "CRITICAL"]:
                 escalation_events += 1
                 
             # Check if critical conversation
@@ -639,4 +639,108 @@ async def admin_action(username: str, action: str) -> bool:
         return False
     db = await get_db()
     result = await db.users.update_one({"username": username}, {"$set": updates})
-    return result.modified_count > 0 or bool(updates)
+    return result.modified_count > 0
+
+async def get_active_conversations(limit: int = 50) -> List[dict]:
+    """Returns a list of recent conversation pairs/groups."""
+    if _use_memory:
+        msgs = sorted(_memory_store["messages"], key=lambda x: x.get("timestamp", ""), reverse=True)
+        conversations = []
+        seen = set()
+        for m in msgs:
+            is_group = m.get("is_group", False)
+            if is_group:
+                key = f"group:{m['receiver']}"
+                if key not in seen:
+                    seen.add(key)
+                    conversations.append({"type": "group", "name": m["receiver"], "last_activity": m.get("timestamp")})
+            else:
+                p1, p2 = min(m["sender"], m["receiver"]), max(m["sender"], m["receiver"])
+                key = f"dm:{p1}:{p2}"
+                if key not in seen:
+                    seen.add(key)
+                    conversations.append({"type": "dm", "user1": p1, "user2": p2, "last_activity": m.get("timestamp")})
+            if len(conversations) >= limit:
+                break
+        return conversations
+    
+    db = await get_db()
+    # MongoDB aggregation to find the most recent conversations
+    pipeline = [
+        {"$sort": {"timestamp": -1}},
+        {"$group": {
+            "_id": {
+                "is_group": "$is_group",
+                "receiver": "$receiver",
+                "sender": {"$cond": [{"$eq": ["$is_group", True]}, None, {"$cond": [{"$lt": ["$sender", "$receiver"]}, "$sender", "$receiver"]}]},
+                "receiver2": {"$cond": [{"$eq": ["$is_group", True]}, None, {"$cond": [{"$lt": ["$sender", "$receiver"]}, "$receiver", "$sender"]}]}
+            },
+            "last_activity": {"$first": "$timestamp"}
+        }},
+        {"$sort": {"last_activity": -1}},
+        {"$limit": limit}
+    ]
+    cursor = db.messages.aggregate(pipeline)
+    results = await cursor.to_list(length=limit)
+    
+    conversations = []
+    for r in results:
+        _id = r["_id"]
+        if _id["is_group"]:
+            conversations.append({"type": "group", "name": _id["receiver"], "last_activity": r["last_activity"]})
+        else:
+            conversations.append({"type": "dm", "user1": _id["sender"], "user2": _id["receiver2"], "last_activity": r["last_activity"]})
+            
+    return conversations
+
+async def search_messages(query: str, username: str, limit: int = 50, max_scan: int = None) -> List[dict]:
+    """
+    Performs semantic search across the user's messages.
+    If max_scan is provided, it acts as a configurable hard limit to ensure performance.
+    Defaults to scanning all accessible messages for the user.
+    """
+    import ai.embedding_service as embedding_service
+    
+    query_vector = embedding_service.generate_embedding(query)
+    
+    with open("search_debug.log", "a") as f:
+        f.write(f"Query: {query}, Vector length: {len(query_vector) if query_vector else 0}\n")
+    
+    if not query_vector:
+        # Fallback if embedding service is offline or fails
+        return []
+        
+    if _use_memory:
+        msgs = [m for m in _memory_store["messages"] if m["sender"] == username or m["receiver"] == username]
+    else:
+        db = await get_db()
+        cursor = db.messages.find({
+            "$or": [
+                {"sender": username},
+                {"receiver": username}
+            ]
+        }, {"_id": 0})
+        
+        cursor = cursor.sort("timestamp", -1)
+        
+        if max_scan:
+            cursor = cursor.limit(max_scan)
+            
+        msgs = await cursor.to_list(length=max_scan or 1000000)
+    
+    with open("search_debug.log", "a") as f:
+        f.write(f"Messages found in DB: {len(msgs)}\n")
+
+    # Calculate similarities
+    results = []
+    for m in msgs:
+        msg_vector = m.get("embedding")
+        if msg_vector:
+            sim = embedding_service.cosine_similarity(query_vector, msg_vector)
+            results.append((sim, m))
+            
+    # Sort by similarity descending
+    results.sort(key=lambda x: x[0], reverse=True)
+    
+    # Return top 'limit' messages
+    return [m for sim, m in results[:limit]]

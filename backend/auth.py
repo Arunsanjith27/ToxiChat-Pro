@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError
 from dotenv import load_dotenv
+import audit
 
 load_dotenv()
 
@@ -61,6 +62,20 @@ async def get_optional_user(
         return verify_token(credentials.credentials)
     except HTTPException:
         return None
+
+
+async def logout_user(username: str):
+    import database as db
+    await db.update_user_profile(username, {"is_online": False})
+    
+    # Async Audit Log
+    await audit.log_event(
+        actor_username=username,
+        action="LOGOUT",
+        resource_type="AUTH",
+        resource_id=username,
+        description="User logged out"
+    )
 
 
 def is_admin_user(username: str, user_doc: Optional[dict] = None) -> bool:

@@ -41,3 +41,20 @@ models/unbiased-toxic-roberta/
 Thumbs.db
 .idea/
 .vscode/
+# AI Models
+backend/ai/models/
+backend/ai/models/audio/
+backend/ai/models/conversation-intelligence/
+backend/ai/models/rewrite-model/
+
+# Logs
+*.log
+
+# Debug / Test Reports
+backend/debug_*.py
+backend/*_debug.log
+backend/results.json
+backend/auth_test_report.json
+
+# Python cache
+*.pyc

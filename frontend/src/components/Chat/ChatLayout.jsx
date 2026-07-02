@@ -160,9 +160,9 @@ export default function ChatLayout() {
             contains_pii: data.contains_pii,
             pii_entities: data.pii_entities,
             risk_score: data.risk_score,
-            risk_level: data.risk_level,
             risk_reasons: data.risk_reasons,
-            recommendation: data.recommendation
+            recommendation: data.recommendation,
+            explanation: data.explanation
           } : m
         ));
       } else if (data.type === 'message_deleted') {

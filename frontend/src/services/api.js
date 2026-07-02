@@ -68,6 +68,8 @@ export const adminApi = {
   toxicUsers: (token) => request('/api/admin/toxic-users', {}, token),
   users: (token) => request('/api/admin/users', {}, token),
   action: (body, token) => request('/api/admin/action', { method: 'POST', body: JSON.stringify(body) }, token),
+  highRiskConversations: (token) => request('/api/admin/analytics/high-risk', {}, token),
+  conversationAnalytics: (user1, user2, token) => request(`/api/admin/conversation/${user1}/${user2}`, {}, token),
 };
 
 export function avatarUrl(path) {

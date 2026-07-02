@@ -1,25 +1,34 @@
 import os
 import json
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional, List, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+import routers.auth_router
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
+import models
 from models import (
     UserRegister, UserLogin, TokenOut, UserOut,
     ToxicityRequest, ToxicityResult, DashboardStats, GroupCreate, RewriteRequest,
     ForgotPasswordRequest, ResetPasswordRequest, ProfileUpdate,
     EscalationRequest, EscalationResult, AdminAction, ConversationHealth,
+    ConversationAnalyticsResult
 )
 import database as db
 import presence
 import ai.manager as ai_manager
+import incidents
+import audit
+import compliance
 import redis_service
 from security import hash_password, verify_password, migrate_password, sanitize_input, validate_file
 from auth import (
@@ -36,6 +45,17 @@ os.makedirs(AVATAR_DIR, exist_ok=True)
 async def lifespan(app: FastAPI):
     await db.get_db()
     await redis_service.init_redis()
+
+    # Register all AI modules with the resilience health tracker
+    import ai.resilience as resilience
+    for module_name in [
+        "Emotion", "Toxicity", "PII", "Rewrite", "Risk", "Explainability",
+        "Embedding", "Conversation Analytics", "Conversation Intelligence",
+        "Image Moderation", "Audio Moderation", "Prediction",
+        "Copilot Context", "Moderator Copilot",
+    ]:
+        resilience.register_module(module_name)
+
     print("[OK] ToxiChat Pro API ready")
     yield
 
@@ -50,69 +70,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.include_router(routers.auth_router.router)
+
 app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "uploads")), name="uploads")
-
-
-def _token_response(user: dict) -> TokenOut:
-    return TokenOut(
-        access_token=create_token(user["username"], is_admin_user(user["username"], user)),
-        username=user["username"],
-        display_name=user.get("display_name", user["username"]),
-        role=user.get("role", "user"),
-        avatar_url=user.get("avatar_url"),
-        reputation_score=user.get("reputation_score", 100),
-    )
-
-
-@app.post("/api/register", response_model=TokenOut)
-async def register(data: UserRegister):
-    existing = await db.get_user(data.username)
-    if existing:
-        raise HTTPException(400, "Username already taken")
-    hashed = hash_password(data.password)
-    display = data.display_name or data.username
-    user = await db.create_user(data.username, hashed, display, data.email)
-    return _token_response(user)
-
-
-@app.post("/api/login", response_model=TokenOut)
-async def login(data: UserLogin):
-    user = await db.get_user(data.username)
-    if not user:
-        raise HTTPException(401, "Invalid username or password")
-    if not verify_password(data.password, user["password"]):
-        new_hash = migrate_password(data.password, user["password"])
-        if new_hash:
-            await db.update_user_password(data.username, new_hash)
-        else:
-            raise HTTPException(401, "Invalid username or password")
-    else:
-        new_hash = migrate_password(data.password, user["password"])
-        if new_hash:
-            await db.update_user_password(data.username, new_hash)
-    return _token_response(user)
-
-
-@app.post("/api/auth/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest):
-    token = await db.create_reset_token(data.username)
-    if not token:
-        return {"message": "If the account exists, a reset link has been generated", "token": None}
-    return {
-        "message": "Password reset token generated. Use it within 1 hour.",
-        "token": token,
-        "reset_url_hint": f"/reset-password?token={token}",
-    }
-
-
-@app.post("/api/auth/reset-password")
-async def reset_password(data: ResetPasswordRequest):
-    username = await db.consume_reset_token(data.token)
-    if not username:
-        raise HTTPException(400, "Invalid or expired reset token")
-    await db.update_user_password(username, hash_password(data.new_password))
-    user = await db.get_user(username)
-    return {"message": "Password updated successfully", "username": username}
 
 
 @app.get("/api/me", response_model=UserOut)
@@ -180,9 +150,20 @@ async def list_users(username: str = Depends(get_current_user)):
     return await db.get_all_users()
 
 
+@app.get("/api/ai/health")
+async def get_ai_health(username: str = Depends(get_current_user)):
+    import ai.resilience as r
+    return r.get_ai_health()
+
 @app.post("/api/predict", response_model=ToxicityResult)
 async def predict(data: ToxicityRequest, username: str = Depends(get_current_user)):
     result = await ai_manager.analyze_message(data.text)
+    emb = result.get("embedding", [])
+    with open("debug_log.txt", "a") as f:
+        f.write(f"predict called! emb length: {len(emb)}\n")
+        if not emb:
+            import ai.resilience as r
+            f.write(f"Health: {r.get_ai_health()}\n")
     return ToxicityResult(text=data.text, **result)
 
 
@@ -224,8 +205,225 @@ async def rewrite(data: RewriteRequest, username: str = Depends(get_current_user
 
 @app.get("/api/search")
 async def search_messages(q: str = "", limit: int = 50, username: str = Depends(get_current_user)):
-    return await db.search_messages(q, limit)
+    with open("main_search_debug.log", "a") as f:
+        f.write(f"Hit /api/search with q={q}, username={username}\n")
+    return await db.search_messages(q, username, limit)
 
+class SummaryRequest(BaseModel):
+    conversation_id: str
+    summary_type: str = "moderator"
+
+@app.post("/api/conversation/summary")
+async def generate_summary(req: SummaryRequest, username: str = Depends(get_current_user)):
+    # Validate access (simplified for now, assumes username is authorized)
+    summary_res = await ai_manager.summarize_conversation(req.conversation_id, req.summary_type)
+    return summary_res
+
+@app.post("/api/image/analyze", response_model=models.ImageAnalysisResponse)
+async def analyze_image_upload(file: UploadFile = File(...), username: str = Depends(get_current_user)):
+    try:
+        file_bytes = await file.read()
+        res = await ai_manager.analyze_image_orchestrator(file_bytes, file.content_type)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/audio/analyze", response_model=models.AudioAnalysisResponse)
+async def analyze_audio_upload(file: UploadFile = File(...), username: str = Depends(get_current_user)):
+    try:
+        file_bytes = await file.read()
+        res = await ai_manager.analyze_audio_orchestrator(file_bytes, file.content_type)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversation/analytics/{conversation_id}")
+async def get_conversation_analytics_api(conversation_id: str, username: str = Depends(get_current_user)):
+    try:
+        res = await ai_manager.analyze_conversation_orchestrator(conversation_id)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversation/prediction/{conversation_id}", response_model=models.EscalationPredictionResponse)
+async def get_conversation_prediction_api(conversation_id: str, username: str = Depends(get_current_user)):
+    try:
+        res = await ai_manager.predict_conversation_escalation(conversation_id)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/copilot", response_model=models.CopilotResponse)
+async def ask_moderator_copilot_api(req: models.CopilotRequest, username: str = Depends(get_current_user)):
+    try:
+        res = await ai_manager.ask_moderator_copilot(req.conversation_id, req.question)
+        
+        # Async Audit Log
+        await audit.log_event(
+            actor_username=username,
+            action="COPILOT_USED",
+            resource_type="CONVERSATION",
+            resource_id=req.conversation_id,
+            conversation_id=req.conversation_id,
+            description=f"Moderator asked Copilot: {req.question}"
+        )
+        
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# INCIDENT MANAGEMENT API
+# ==========================================
+
+@app.post("/api/incidents")
+async def create_incident_api(req: models.CreateIncidentRequest, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.create_incident(req.conversation_id, req.priority, created_by=username)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/incidents")
+async def list_incidents_api(status: Optional[str] = None, priority: Optional[str] = None, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.list_incidents(status, priority)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/incidents/{incident_id}")
+async def get_incident_api(incident_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.get_incident(incident_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/api/incidents/{incident_id}")
+async def update_incident_status_api(incident_id: str, req: models.UpdateIncidentStatusRequest, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.update_status(incident_id, req.status)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/incidents/{incident_id}/assign")
+async def assign_incident_api(incident_id: str, req: models.AssignIncidentRequest, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.assign_incident(incident_id, req.assignee, assigned_by=username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/incidents/{incident_id}/resolve")
+async def resolve_incident_api(incident_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.resolve_incident(incident_id, resolved_by=username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/incidents/{incident_id}/archive")
+async def archive_incident_api(incident_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.archive_incident(incident_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/incidents/{incident_id}/notes")
+async def add_incident_note_api(incident_id: str, req: models.AddIncidentNoteRequest, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.add_note(incident_id, req.content, author=username, internal_only=req.internal_only)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/incidents/{incident_id}/notes")
+async def get_incident_notes_api(incident_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await incidents.get_incident_notes(incident_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# AUDIT TRAIL API
+# ==========================================
+
+@app.get("/api/audit")
+async def get_audit_logs_api(action: Optional[str] = None, actor: Optional[str] = None, username: str = Depends(get_current_user)):
+    if not is_admin_user(username):
+        raise HTTPException(status_code=403, detail="Not authorized to view global audit logs.")
+    return await audit.get_audit_logs(limit=100, action=action, actor=actor)
+
+@app.get("/api/audit/incident/{incident_id}")
+async def get_incident_audit_api(incident_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await audit.get_incident_history(incident_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/audit/user/{target_username}")
+async def get_user_audit_api(target_username: str, username: str = Depends(get_current_user)):
+    try:
+        if not is_admin_user(username):
+            raise HTTPException(status_code=403, detail="Not authorized.")
+        return await audit.get_user_activity(target_username)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# COMPLIANCE REPORT API
+# ==========================================
+
+@app.post("/api/reports/generate")
+async def generate_report_api(req: models.GenerateReportRequest, username: str = Depends(get_current_user)):
+    if not is_admin_user(username):
+        raise HTTPException(status_code=403, detail="Not authorized.")
+    report = await compliance.generate_report(req.incident_id, generated_by=username)
+    return report
+
+@app.get("/api/reports/{report_id}")
+async def get_report_api(report_id: str, username: str = Depends(get_current_user)):
+    try:
+        return await compliance.get_report(report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+from fastapi.responses import Response
+
+@app.get("/api/reports/download/{report_id}")
+async def download_report_api(report_id: str, format: str = "pdf", username: str = Depends(get_current_user)):
+    try:
+        report = await compliance.get_report(report_id)
+        if format == "pdf":
+            pdf_bytes = compliance.export_pdf(report["report_object"])
+            return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=report_{report_id}.pdf"})
+        elif format == "html":
+            html_str = compliance.export_html(report["report_object"])
+            return Response(content=html_str, media_type="text/html")
+        elif format == "markdown" or format == "md":
+            md_str = compliance.export_markdown(report["report_object"])
+            return Response(content=md_str, media_type="text/markdown")
+        else:
+            json_str = compliance.export_json(report["report_object"])
+            return Response(content=json_str, media_type="application/json")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/messages/{user1}/{user2}")
 async def get_messages(user1: str, user2: str, username: str = Depends(get_current_user)):
@@ -238,6 +436,14 @@ async def get_messages(user1: str, user2: str, username: str = Depends(get_curre
 async def conversation_health(partner: str, username: str = Depends(get_current_user)):
     health = await db.get_conversation_health(username, partner)
     return ConversationHealth(**health)
+
+
+@app.get("/api/analytics/conversation/{partner}", response_model=ConversationAnalyticsResult)
+async def get_conversation_analytics(partner: str, username: str = Depends(get_current_user)):
+    messages = await db.get_conversation_messages(username, partner, limit=1000)
+    import ai.conversation_analytics as conversation_analytics
+    analytics = conversation_analytics.analyze_conversation(messages)
+    return ConversationAnalyticsResult(**analytics)
 
 
 @app.get("/api/messages/group/{group_name}")
@@ -277,6 +483,43 @@ async def admin_toxic_users(admin: str = Depends(require_admin)):
 @app.get("/api/admin/users")
 async def admin_users(admin: str = Depends(require_admin)):
     return await db.admin_list_users()
+
+@app.get("/api/admin/analytics/high-risk")
+async def admin_high_risk_conversations(admin: str = Depends(require_admin)):
+    active_convos = await db.get_active_conversations(limit=20)
+    import ai.conversation_analytics as conversation_analytics
+    
+    results = []
+    for conv in active_convos:
+        if conv["type"] == "group":
+            messages = await db.get_group_messages(conv["name"], limit=100)
+            target = conv["name"]
+        else:
+            messages = await db.get_messages(conv["user1"], conv["user2"], limit=100)
+            target = f"{conv['user1']} / {conv['user2']}"
+            
+        analytics = conversation_analytics.analyze_conversation(messages)
+        if analytics["conversation_state"] in ["CRITICAL", "ESCALATING"] or analytics["average_risk_score"] > 40:
+            results.append({
+                "type": conv["type"],
+                "target": target,
+                "user1": conv.get("user1"),
+                "user2": conv.get("user2"),
+                "group_name": conv.get("name"),
+                "last_activity": conv["last_activity"],
+                "analytics": analytics
+            })
+            
+    # Sort by highest risk first
+    results.sort(key=lambda x: x["analytics"]["average_risk_score"], reverse=True)
+    return results
+
+@app.get("/api/admin/conversation/{user1}/{user2}")
+async def admin_conversation_analytics(user1: str, user2: str, admin: str = Depends(require_admin)):
+    messages = await db.get_messages(user1, user2, limit=500)
+    import ai.conversation_analytics as conversation_analytics
+    analytics = conversation_analytics.analyze_conversation(messages)
+    return {"messages": messages, "analytics": analytics}
 
 
 @app.post("/api/admin/action")
@@ -423,6 +666,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "risk_level": tox.get("risk_level", "LOW"),
                         "risk_reasons": tox.get("risk_reasons", []),
                         "recommendation": tox.get("recommendation", "Safe to send."),
+                        "explanation": tox.get("explanation"),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,
@@ -453,6 +697,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "risk_level": tox.get("risk_level", "LOW"),
                         "risk_reasons": tox.get("risk_reasons", []),
                         "recommendation": tox.get("recommendation", "Safe to send."),
+                        "explanation": tox.get("explanation"),
                         "status": "sent",
                         "reactions": {},
                         "edited": False,
@@ -564,6 +809,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                                     "risk_level": tox.get("risk_level", "LOW"),
                                     "risk_reasons": tox.get("risk_reasons", []),
                                     "recommendation": tox.get("recommendation", "Safe to send."),
+                                    "explanation": tox.get("explanation"),
                                 }
                                 
                                 success = await db.update_message_full(msg_id, username, updates)
@@ -680,6 +926,11 @@ async def health():
         "ml_model": "transformer" if ai_model.is_transformer_ready() else "keywords",
         "storage": "MongoDB" if not db.is_memory_mode() else "In-Memory ⚠️",
     }
+
+@app.get("/api/ai/health")
+async def ai_health(username: str = Depends(get_current_user)):
+    import ai.resilience as resilience
+    return resilience.get_ai_health()
 
 
 if __name__ == "__main__":
