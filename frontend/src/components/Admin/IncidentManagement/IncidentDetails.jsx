@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, ShieldAlert, Cpu, Activity, Download, CheckCircle } from 'lucide-react';
+import { API_URL } from '../../../services/api';
 import IncidentStatusBadge from './IncidentStatusBadge';
 import IncidentNotes from './IncidentNotes';
 import IncidentTimeline from './IncidentTimeline';
@@ -11,7 +12,7 @@ export default function IncidentDetails({ incident, token, onBack, onUpdate }) {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      const res = await fetch(`/api/incidents/${incident.incident_id}`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incident.incident_id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -27,7 +28,7 @@ export default function IncidentDetails({ incident, token, onBack, onUpdate }) {
 
   const handleResolve = async () => {
     try {
-      const res = await fetch(`/api/incidents/${incident.incident_id}/resolve`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incident.incident_id}/resolve`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -39,7 +40,7 @@ export default function IncidentDetails({ incident, token, onBack, onUpdate }) {
 
   const handleArchive = async () => {
     try {
-      const res = await fetch(`/api/incidents/${incident.incident_id}/archive`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incident.incident_id}/archive`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

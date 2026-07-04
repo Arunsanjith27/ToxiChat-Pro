@@ -1,24 +1,36 @@
-# ToxiChat — AI-Powered Toxicity Prediction Platform
+# ToxiChat Pro RC-1 — AI-Powered Toxicity Prediction Platform
 
-Production-ready real-time chat with ML toxicity detection, conversation escalation prediction, JWT authentication, admin moderation, and analytics.
+Production-ready real-time chat with ML toxicity detection, conversation escalation prediction, JWT authentication, admin moderation, image moderation, and comprehensive analytics.
 
-![ToxiChat](https://img.shields.io/badge/ToxiChat-v3.0-emerald)
+![ToxiChat](https://img.shields.io/badge/ToxiChat-RC--1-emerald)
 ![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688)
 ![React](https://img.shields.io/badge/Frontend-React-61DAFB)
+![MongoDB](https://img.shields.io/badge/Database-MongoDB-47A248)
+
+## Project Overview
+
+ToxiChat Pro RC-1 is a highly scalable, real-time messaging platform focused on trust, safety, and community moderation. It leverages a modern React SPA on the frontend and an asynchronous FastAPI + WebSocket architecture on the backend, tightly integrated with a sophisticated AI inference pipeline for real-time text analysis.
 
 ## Features
 
-- **JWT Authentication** — Register, login, forgot/reset password, protected routes
-- **Real-time WebSocket Chat** — Typing indicators, online status, delivered/seen ticks
-- **AI Toxicity Detection** — HuggingFace Transformers → scikit-learn → keyword fallback
-- **Pre-send Warning Popup** — Review toxic messages before sending with rewrite suggestions
-- **Conversation Escalation Prediction** — Health scores and trend analysis per chat
-- **User Reputation Scores** — Dynamic scoring based on message history
-- **Analytics Dashboard** — Toxicity trends, conversation health, flagged content
-- **Admin Moderation Panel** — Flagged messages, user management, mute/unmute
-- **Profile Management** — Display name, bio, avatar upload
-- **Dark / Light Mode** — Theme toggle with persistent preference
-- **Docker Ready** — Full stack with MongoDB, Redis, frontend nginx
+- **JWT Authentication** — Register, login, forgot/reset password, and protected routes.
+- **Real-time WebSocket Chat** — Typing indicators, online status, delivered/seen ticks, auto-reconnect with exponential backoff.
+- **AI Toxicity Detection** — HuggingFace Transformers → scikit-learn → keyword fallback.
+- **Pre-send Warning Popup** — Review toxic messages before sending with rewrite suggestions.
+- **Conversation Escalation Prediction** — Health scores and trend analysis per chat.
+- **User Reputation Scores** — Dynamic scoring based on message history.
+- **Analytics Dashboard** — Toxicity trends, conversation health, flagged content.
+- **Admin Moderation Panel** — Flagged messages, user management, mute/unmute, audit trail, and compliance.
+- **Image Moderation (Admin)** — OCR and NSFW image analysis for incident evidence.
+- **Moderator Copilot** — NLP query agent for querying chat history and platform metrics.
+- **Dark / Light Mode** — Theme toggle with persistent preference.
+
+## Tech Stack
+
+- **Frontend**: React 18, React Router DOM, Framer Motion, TailwindCSS, Vite.
+- **Backend**: Python 3.13, FastAPI, WebSockets, Uvicorn, PyJWT, Passlib (Bcrypt).
+- **Database**: MongoDB (Motor async driver), Redis (Rate limiting).
+- **AI/ML Engine**: EasyOCR, NudeNet, HuggingFace (Detoxify / BERT).
 
 ## Architecture
 
@@ -53,42 +65,63 @@ flowchart TB
     ML -->|toxic-bert| HF[HuggingFace Models]
 ```
 
-## Project Structure
+## Folder Structure
 
 ```
 toxichat/
 ├── backend/
 │   ├── main.py              # FastAPI app (REST + WebSocket)
-│   ├── auth.py              # JWT dependencies
-│   ├── database.py          # MongoDB + in-memory fallback
-│   ├── ml_service.py        # Toxicity detection
-│   ├── escalation.py        # Conversation escalation + reputation
+│   ├── auth_router.py       # Authentication routes
+│   ├── database.py          # MongoDB configuration
+│   ├── ai/                  # AI Pipeline (Image, Audio, NLP)
 │   ├── models.py            # Pydantic schemas
 │   ├── security.py          # Password hashing, sanitization
-│   ├── redis_service.py     # Cache, presence, rate limiting
-│   ├── tests/               # pytest suite
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React UI components
+│   │   ├── components/      # React UI components (Auth, Chat, Admin)
 │   │   ├── context/         # Auth + Theme providers
-│   │   └── services/        # API client layer
-│   ├── Dockerfile
-│   └── nginx.conf
-├── models/                  # Optional sklearn .pkl files
+│   │   └── services/        # API client layer (REST endpoints)
 ├── docker-compose.yml
-├── render.yaml              # Render deployment
-└── vercel.json              # Vercel frontend deployment
+└── render.yaml              # Render deployment configuration
 ```
 
-## Quick Start (Local)
+## AI Features
+
+- **Toxicity Detection**: Analyzes text payloads instantly using a resilient pipeline wrapper.
+- **Rewrite engine**: Suggests positive, de-escalating alternatives for flagged messages.
+- **Health Score**: Tracks the emotional trajectory of an ongoing chat (0-100 score).
+
+## Authentication
+
+- Fully robust JWT authentication strategy via PyJWT.
+- Tokens securely persisted in localStorage, decoded for Context provision.
+- Backend routes strictly gated via `Depends(get_current_user)` and `Depends(require_admin)`.
+
+## Chat Features
+
+- Lightning fast WebSockets with a one-to-one dictionary mapping.
+- Auto-reconnect with exponential backoff algorithm (resumes typing, presence, and unread ticks without refreshing).
+
+## Image Moderation
+
+- Robust `/api/image/analyze` backend endpoint capable of OCR extraction (EasyOCR) and NSFW classification.
+- Integrated fully into the **Admin Dashboard** via the `ImageEvidenceViewer` for resolving complex user incidents. *(Note: General chat attachments are deferred to RC-2).*
+
+## Admin Dashboard
+
+- **Incident Management**: Assign, resolve, and archive moderation tickets.
+- **Audit Trail**: Chronological immutable tracking of all admin actions.
+- **Compliance Reports**: Downloadable JSON/CSV GDPR-friendly data exports.
+- **Telemetry**: Real-time visualization of model inference latency and accuracy.
+
+## Installation & Local Setup
 
 ### Prerequisites
 
 - Python 3.11+
 - Node.js 18+
-- MongoDB (optional — falls back to in-memory)
-- Redis (optional — falls back to in-memory)
+- MongoDB instance (local or Atlas)
 
 ### 1. Backend
 
@@ -96,7 +129,7 @@ toxichat/
 cd backend
 cp .env.example .env
 pip install -r requirements.txt
-python main.py
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 API runs at `http://localhost:8000`
@@ -105,24 +138,11 @@ API runs at `http://localhost:8000`
 
 ```bash
 cd frontend
-cp .env.example .env.local
 npm install
-npm start
+npm run dev
 ```
 
 App runs at `http://localhost:3000`
-
-### 3. Docker (Full Stack)
-
-```bash
-cp .env.example .env
-docker-compose up --build
-```
-
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8000`
-- MongoDB: `localhost:27017`
-- Redis: `localhost:6379`
 
 ## Environment Variables
 
@@ -133,118 +153,41 @@ docker-compose up --build
 | `DB_NAME` | Database name | `toxichat` |
 | `REDIS_URL` | Redis connection | `redis://localhost:6379` |
 | `CORS_ORIGINS` | Allowed origins (comma-separated) | `*` |
-| `ADMIN_USERNAMES` | Admin usernames (comma-separated) | `admin` |
 | `REACT_APP_API_URL` | Frontend API base URL | `http://localhost:8000` |
 
-## API Documentation
+## API Overview
 
-### Authentication
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/register` | No | Register new user |
-| POST | `/api/login` | No | Login, returns JWT |
-| POST | `/api/auth/forgot-password` | No | Generate reset token |
-| POST | `/api/auth/reset-password` | No | Reset password with token |
-| GET | `/api/me` | JWT | Current user profile |
-
-### Chat & ML
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/users` | JWT | List users |
-| GET | `/api/messages/{u1}/{u2}` | JWT | Chat history |
-| POST | `/api/predict` | JWT | Toxicity prediction |
-| POST | `/api/predict/escalation` | JWT | Escalation + health |
-| POST | `/api/rewrite` | JWT | Toxic text rewrite |
-| GET | `/api/conversation/health/{partner}` | JWT | Conversation health |
-| GET | `/api/search?q=` | JWT | Search messages |
-
-### Dashboard & Admin
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/dashboard/stats` | JWT | Analytics data |
-| GET | `/api/admin/flagged` | Admin | Flagged messages |
-| GET | `/api/admin/users` | Admin | All users |
-| POST | `/api/admin/action` | Admin | Moderation actions |
-
-### WebSocket
-
-Connect: `ws://host/ws/{jwt_token}`
-
-**Send:**
-```json
-{"type": "message", "text": "Hello", "receiver": "username", "force_send": false}
-{"type": "typing", "receiver": "username"}
-{"type": "seen", "id": "msg_id", "sender": "username"}
-```
-
-**Receive:** `message`, `toxicity_pre_send`, `toxicity_alert`, `toxicity_warning`, `typing`, `status_update`, `users_list`, `system`
-
-## ML Model Setup
-
-Place optional sklearn models in `models/`:
-- `model.pkl` — Trained classifier
-- `tfidf_vectorizer.pkl` — TF-IDF vectorizer
-
-Without these, the app uses HuggingFace `unitary/toxic-bert` or keyword fallback.
-
-## Deployment
-
-### MongoDB Atlas
-
-1. Create a free cluster at [mongodb.com/atlas](https://www.mongodb.com/atlas)
-2. Get connection string: `mongodb+srv://user:pass@cluster.mongodb.net/toxichat`
-3. Set `MONGO_URL` in backend environment
-
-### Render (Backend)
-
-1. Connect GitHub repo to Render
-2. Use `render.yaml` or create Web Service with Docker
-3. Set environment variables (`MONGO_URL`, `SECRET_KEY`, `CORS_ORIGINS`)
-4. Deploy — health check at `/`
-
-### Vercel (Frontend)
-
-```bash
-cd frontend
-npm run build
-vercel --prod
-```
-
-Set `REACT_APP_API_URL` to your Render backend URL.
-
-### Deployment Checklist
-
-- [ ] Generate strong `SECRET_KEY` (32+ random chars)
-- [ ] Configure MongoDB Atlas with IP whitelist
-- [ ] Set `CORS_ORIGINS` to your frontend domain
-- [ ] Set `ADMIN_USERNAMES` for admin access
-- [ ] Configure `REACT_APP_API_URL` on frontend
-- [ ] Enable HTTPS on both frontend and backend
-- [ ] Test WebSocket connectivity through proxy
-- [ ] Run `pytest` in backend before deploy
-- [ ] Run `npm run build` in frontend before deploy
-- [ ] Set up MongoDB backups
-- [ ] Monitor `/` health endpoint
-
-## Testing
-
-```bash
-cd backend
-pip install -r requirements.txt
-pytest -v
-```
-
-```bash
-cd frontend
-npm run build
-```
+- **Auth**: `/api/register`, `/api/login`, `/api/me`
+- **Chat**: `/api/users`, `/api/messages/{u1}/{u2}`, `/api/search`
+- **AI**: `/api/predict`, `/api/rewrite`, `/api/image/analyze`
+- **Admin**: `/api/incidents`, `/api/audit`, `/api/admin/copilot`
+- **WebSockets**: `ws://{host}/ws/{jwt_token}`
 
 ## Screenshots
 
-> Add screenshots of Login, Chat, Pre-send Warning, Analytics Dashboard, and Admin Panel after deployment.
+> *Placeholder: Add screenshots of Login, Chat, Pre-send Warning, Analytics Dashboard, and Admin Panel after deployment.*
+
+## Deployment Instructions
+
+### Full Stack Docker
+```bash
+docker-compose up --build
+```
+
+### Production Best Practices
+- Ensure `SECRET_KEY` is cryptographically strong.
+- Run MongoDB behind a VPC or configure strict IP whitelisting.
+- Set `REACT_APP_API_URL` to point to the production backend URI during Vite build.
+- Use Nginx or an Application Load Balancer to terminate SSL/TLS.
+
+## Future Roadmap (RC-2)
+
+- **Proper Cloud Storage Integration**: Add an S3/GCS bucket for file attachments.
+- **Chat Image Attachments**: Enable standard users to upload images in the chat UI.
+- **Voice Messages**: Integrate the existing `/api/audio/analyze` (Whisper) endpoint into the frontend.
+- **Group Chats**: Activate the backend `GroupCreate` schemas to allow N-user group messages.
+- **Offline Message Queue**: Cache outbound messages in IndexedDB if the WebSocket drops, automatically flushing them upon reconnect.
+- **Performance Optimizations**: Move AI inference off the main WebSocket thread and onto a Celery/Redis background task queue to maximize concurrency.
 
 ## License
 

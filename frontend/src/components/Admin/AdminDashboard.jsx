@@ -14,6 +14,7 @@ import ModeratorCopilotPanel from './ModeratorCopilotPanel';
 import IncidentDashboard from './IncidentManagement/IncidentDashboard';
 import AuditDashboard from './AuditTrail/AuditDashboard';
 import ComplianceDashboard from './ComplianceReports/ComplianceDashboard';
+import ImageModerationTab from './ImageModerationTab';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -108,6 +109,12 @@ export default function AdminDashboard() {
         >
           Report Generator
         </button>
+        <button 
+          onClick={() => setActiveTab('image-mod')}
+          className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'image-mod' ? 'bg-pink-600 text-white' : 'text-gray-400 hover:bg-white/5'}`}
+        >
+          Image Moderation
+        </button>
       </div>
 
       {actionMsg && <div className="success-banner mb-4">{actionMsg}</div>}
@@ -124,6 +131,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {activeTab === 'image-mod' && (
+        <div className="h-[800px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl p-6 bg-gray-900/50">
+          <ImageModerationTab />
+        </div>
+      )}
+
       {activeTab === 'modops' && (
         <div className="h-[800px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
           <IncidentDashboard />
@@ -132,7 +145,12 @@ export default function AdminDashboard() {
 
       {activeTab === 'classic' && (
         <>
-          {highRisk.length > 0 && (
+          {highRisk.length === 0 ? (
+            <div className="glass-panel rounded-2xl p-6 mb-6 flex flex-col items-center justify-center h-40">
+              <Activity className="w-8 h-8 text-gray-500 mb-2 opacity-50" />
+              <p className="text-gray-400 text-sm">No telemetry available.</p>
+            </div>
+          ) : (
         <div className="glass-panel rounded-2xl p-6 mb-6 border border-red-500/20">
           <h2 className="text-lg font-semibold theme-text mb-4 flex items-center gap-2">
             <Activity className="w-5 h-5 text-red-400" /> High-Risk Radar (Active Conversations)

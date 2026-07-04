@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, UserCheck, AlertTriangle } from 'lucide-react';
+import { API_URL } from '../../../services/api';
 
 export default function IncidentAssignment({ incidentId, currentAssignee, token, onUpdate }) {
   const [assignee, setAssignee] = useState('');
@@ -12,7 +13,7 @@ export default function IncidentAssignment({ incidentId, currentAssignee, token,
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/incidents/${incidentId}/assign`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incidentId}/assign`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

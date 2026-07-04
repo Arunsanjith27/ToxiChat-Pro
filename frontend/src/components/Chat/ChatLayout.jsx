@@ -70,123 +70,166 @@ export default function ChatLayout() {
       .catch(() => setConversationHealth(null));
   }, [activeChat, messages.length, user?.access_token]);
 
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const isIntentionalCloseRef = useRef(false);
+
   useEffect(() => {
     if (!user?.access_token) return;
-    const ws = new WebSocket(`${WS_URL}/ws/${user.access_token}`);
-    wsRef.current = ws;
+    isIntentionalCloseRef.current = false;
+    reconnectAttemptsRef.current = 0;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    const connect = () => {
+      const ws = new WebSocket(`${WS_URL}/ws/${user.access_token}`);
+      wsRef.current = ws;
 
-      if (data.type === 'users_list') {
-        setContacts(data.users.filter(u => u.username !== user.username));
-      } else if (data.type === 'message') {
-        setMessages(prev => {
-          const exists = prev.some(m => m.id === data.id);
-          return exists ? prev : [...prev, data];
-        });
-        if (data.sender !== user.username) {
-          playNotifSound();
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(data.sender, { body: data.text || '[message]' });
-          }
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'message_delivered', message_id: data.id, sender: data.sender }));
-          }
-          if (data.sender !== activeChatRef.current?.username) {
-            setUnreadCounts(prev => ({
-              ...prev,
-              [data.sender]: (prev[data.sender] || 0) + 1
-            }));
-          }
+      ws.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        if (activeChatRef.current) {
+          ws.send(JSON.stringify({ type: 'active_chat', partner: activeChatRef.current.username }));
         }
-      } else if (data.type === 'toxicity_pre_send') {
-        setPreSendWarning(data);
-      } else if (data.type === 'toxicity_alert') {
-        setAlert(data);
-      } else if (data.type === 'toxicity_warning') {
-        setReceiverWarning(data);
-        setTimeout(() => setReceiverWarning(null), 5000);
-      } else if (data.type === 'typing_start') {
-        const sender = data.sender;
-        setTypingUsers(prev => ({ ...prev, [sender]: true }));
-        if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
-        typingTimeoutRef.current[sender] = setTimeout(() => {
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'users_list') {
+          setContacts(data.users.filter(u => u.username !== user.username));
+        } else if (data.type === 'message') {
+          setMessages(prev => {
+            const exists = prev.some(m => m.id === data.id);
+            return exists ? prev : [...prev, data];
+          });
+          if (data.sender !== user.username) {
+            playNotifSound();
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification(data.sender, { body: data.text || '[message]' });
+            }
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'message_delivered', message_id: data.id, sender: data.sender }));
+            }
+            if (data.sender !== activeChatRef.current?.username) {
+              setUnreadCounts(prev => ({
+                ...prev,
+                [data.sender]: (prev[data.sender] || 0) + 1
+              }));
+            }
+          }
+        } else if (data.type === 'toxicity_pre_send') {
+          setPreSendWarning(data);
+        } else if (data.type === 'toxicity_alert') {
+          setAlert(data);
+        } else if (data.type === 'toxicity_warning') {
+          setReceiverWarning(data);
+          setTimeout(() => setReceiverWarning(null), 5000);
+        } else if (data.type === 'typing_start') {
+          const sender = data.sender;
+          setTypingUsers(prev => ({ ...prev, [sender]: true }));
+          if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
+          typingTimeoutRef.current[sender] = setTimeout(() => {
+            setTypingUsers(prev => ({ ...prev, [sender]: false }));
+          }, 3000);
+        } else if (data.type === 'typing_stop') {
+          const sender = data.sender;
           setTypingUsers(prev => ({ ...prev, [sender]: false }));
-        }, 3000);
-      } else if (data.type === 'typing_stop') {
-        const sender = data.sender;
-        setTypingUsers(prev => ({ ...prev, [sender]: false }));
-        if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
-      } else if (data.type === 'presence_online') {
-        setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: true } : c));
-        if (activeChatRef.current?.username === data.username) {
-            setActiveChat(prev => ({ ...prev, is_online: true }));
+          if (typingTimeoutRef.current[sender]) clearTimeout(typingTimeoutRef.current[sender]);
+        } else if (data.type === 'presence_online') {
+          setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: true } : c));
+          if (activeChatRef.current?.username === data.username) {
+              setActiveChat(prev => ({ ...prev, is_online: true }));
+          }
+        } else if (data.type === 'presence_offline') {
+          setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: false, last_seen: data.last_seen } : c));
+          if (activeChatRef.current?.username === data.username) {
+              setActiveChat(prev => ({ ...prev, is_online: false, last_seen: data.last_seen }));
+          }
+        } else if (data.type === 'message_delivered') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.message_id && m.status !== 'read' ? { ...m, status: data.status } : m
+          ));
+        } else if (data.type === 'message_read') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.message_id ? { ...m, status: data.status, read_at: data.read_at } : m
+          ));
+        } else if (data.type === 'status_update') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.id ? { ...m, status: data.status } : m
+          ));
+        } else if (data.type === 'reaction_update') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.msg_id ? { ...m, reactions: data.reactions } : m
+          ));
+        } else if (data.type === 'message_edited') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.msg_id ? { 
+              ...m, 
+              text: data.text, 
+              edited: true, 
+              edited_at: data.edited_at,
+              toxicity_score: data.toxicity_score,
+              toxicity_label: data.toxicity_label,
+              is_flagged: data.is_flagged,
+              toxic_words: data.toxic_words,
+              emotion: data.emotion,
+              emotion_confidence: data.emotion_confidence,
+              contains_pii: data.contains_pii,
+              pii_entities: data.pii_entities,
+              risk_score: data.risk_score,
+              risk_reasons: data.risk_reasons,
+              recommendation: data.recommendation,
+              explanation: data.explanation
+            } : m
+          ));
+        } else if (data.type === 'message_deleted') {
+          setMessages(prev => prev.map(m =>
+            m.id === data.message_id ? { ...m, deleted: true, deleted_at: data.deleted_at } : m
+          ));
+        } else if (data.type === 'delete_error') {
+          console.error("Delete error:", data.message);
+        } else if (data.type === 'muted') {
+          setIsMuted(true);
+          setMuteMessage(data.message);
+          if (data.until) {
+            setMuteUntil(data.until);
+            const ms = new Date(data.until) - Date.now();
+            if (ms > 0) setTimeout(() => setIsMuted(false), ms);
+          } else {
+            setTimeout(() => setIsMuted(false), 1800000);
+          }
+        } else if (data.type === 'system') {
+          ws.send(JSON.stringify({ type: 'get_users' }));
         }
-      } else if (data.type === 'presence_offline') {
-        setContacts(prev => prev.map(c => c.username === data.username ? { ...c, is_online: false, last_seen: data.last_seen } : c));
-        if (activeChatRef.current?.username === data.username) {
-            setActiveChat(prev => ({ ...prev, is_online: false, last_seen: data.last_seen }));
-        }
-      } else if (data.type === 'message_delivered') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.message_id && m.status !== 'read' ? { ...m, status: data.status } : m
-        ));
-      } else if (data.type === 'message_read') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.message_id ? { ...m, status: data.status, read_at: data.read_at } : m
-        ));
-      } else if (data.type === 'status_update') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.id ? { ...m, status: data.status } : m
-        ));
-      } else if (data.type === 'reaction_update') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.msg_id ? { ...m, reactions: data.reactions } : m
-        ));
-      } else if (data.type === 'message_edited') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.msg_id ? { 
-            ...m, 
-            text: data.text, 
-            edited: true, 
-            edited_at: data.edited_at,
-            toxicity_score: data.toxicity_score,
-            toxicity_label: data.toxicity_label,
-            is_flagged: data.is_flagged,
-            toxic_words: data.toxic_words,
-            emotion: data.emotion,
-            emotion_confidence: data.emotion_confidence,
-            contains_pii: data.contains_pii,
-            pii_entities: data.pii_entities,
-            risk_score: data.risk_score,
-            risk_reasons: data.risk_reasons,
-            recommendation: data.recommendation,
-            explanation: data.explanation
-          } : m
-        ));
-      } else if (data.type === 'message_deleted') {
-        setMessages(prev => prev.map(m =>
-          m.id === data.message_id ? { ...m, deleted: true, deleted_at: data.deleted_at } : m
-        ));
-      } else if (data.type === 'delete_error') {
-        console.error("Delete error:", data.message);
-      } else if (data.type === 'muted') {
-        setIsMuted(true);
-        setMuteMessage(data.message);
-        if (data.until) {
-          setMuteUntil(data.until);
-          const ms = new Date(data.until) - Date.now();
-          if (ms > 0) setTimeout(() => setIsMuted(false), ms);
-        } else {
-          setTimeout(() => setIsMuted(false), 1800000);
-        }
-      } else if (data.type === 'system') {
-        ws.send(JSON.stringify({ type: 'get_users' }));
-      }
+      };
+
+      ws.onclose = () => {
+        if (isIntentionalCloseRef.current) return;
+        
+        const attempts = reconnectAttemptsRef.current;
+        let delay = Math.min(1000 * Math.pow(2, attempts), 30000);
+        
+        reconnectAttemptsRef.current += 1;
+        
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, delay);
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
     };
 
-    return () => ws.close();
+    connect();
+
+    return () => {
+      isIntentionalCloseRef.current = true;
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
   }, [user]);
 
   useEffect(() => {

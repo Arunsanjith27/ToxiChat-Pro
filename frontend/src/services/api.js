@@ -70,6 +70,11 @@ export const adminApi = {
   action: (body, token) => request('/api/admin/action', { method: 'POST', body: JSON.stringify(body) }, token),
   highRiskConversations: (token) => request('/api/admin/analytics/high-risk', {}, token),
   conversationAnalytics: (user1, user2, token) => request(`/api/admin/conversation/${user1}/${user2}`, {}, token),
+  analyzeImage: (file, token) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request('/api/image/analyze', { method: 'POST', body: form }, token);
+  },
 };
 
 export function avatarUrl(path) {

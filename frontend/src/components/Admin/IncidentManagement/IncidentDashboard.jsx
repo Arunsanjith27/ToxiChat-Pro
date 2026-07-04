@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { API_URL } from '../../../services/api';
 import { Search, ShieldAlert, Plus, RefreshCw, FolderOpen, Archive, CheckCircle } from 'lucide-react';
 import IncidentCard from './IncidentCard';
 import IncidentDetails from './IncidentDetails';
@@ -20,7 +21,7 @@ export default function IncidentDashboard() {
       if (filterStatus) params.append('status', filterStatus);
       if (filterPriority) params.append('priority', filterPriority);
       
-      const res = await fetch(`/api/incidents?${params.toString()}`, {
+      const res = await fetch(`${API_URL}/api/incidents?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${user.access_token}` }
       });
       if (res.ok) {
@@ -29,7 +30,7 @@ export default function IncidentDashboard() {
       }
       
       if (selectedIncident) {
-        const dRes = await fetch(`/api/incidents/${selectedIncident.incident_id}`, {
+        const dRes = await fetch(`${API_URL}/api/incidents/${selectedIncident.incident_id}`, {
           headers: { 'Authorization': `Bearer ${user.access_token}` }
         });
         if (dRes.ok) {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, ImageIcon, ShieldAlert, FileText, Download, Activity, ScanFace, FileSearch } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { adminApi } from '../../services/api';
 
 export default function ImageEvidenceViewer() {
   const { user } = useAuth();
@@ -34,20 +35,7 @@ export default function ImageEvidenceViewer() {
     formData.append("file", selectedFile);
 
     try {
-      const res = await fetch('/api/image/analyze', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user.access_token}`
-        },
-        body: formData
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Upload failed');
-      }
-
-      const data = await res.json();
+      const data = await adminApi.analyzeImage(selectedFile, user.access_token);
       setAnalysis(data);
     } catch (err) {
       setError(err.message);
@@ -68,6 +56,7 @@ export default function ImageEvidenceViewer() {
       `NSFW Score: ${analysis.vision.nsfw_score.toFixed(4)}\n` +
       `Violence Score: ${analysis.vision.violence_score.toFixed(4)}\n\n` +
       `[OCR TEXT]\n` +
+      `Confidence: ${analysis.ocr.confidence?.toFixed(4)}\n` +
       `${analysis.ocr.text || 'No text extracted'}\n\n` +
       `[TEXT SAFETY]\n` +
       `Toxicity: ${analysis.text_analysis?.toxicity || 0}\n` +
@@ -76,6 +65,7 @@ export default function ImageEvidenceViewer() {
       `[OVERALL RISK]\n` +
       `Level: ${analysis.risk.overall_risk}\n` +
       `Score: ${analysis.risk.risk_score}\n` +
+      `Recommendation: ${analysis.risk.recommendation || 'N/A'}\n` +
       `Alerts: ${JSON.stringify(analysis.explanation)}`;
 
     const blob = new Blob([content], { type: 'text/plain' });
@@ -160,10 +150,11 @@ export default function ImageEvidenceViewer() {
                 </button>
               </div>
 
-              {/* SHA-256 Hash */}
+              {/* SHA-256 Hash and Image Meta */}
               <div className="p-3 bg-gray-900 rounded-lg border border-gray-800">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">SHA-256 Fingerprint</p>
-                <p className="text-xs text-gray-300 font-mono break-all">{analysis.image.hash}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Image Metadata</p>
+                <p className="text-xs text-gray-300 font-mono break-all">Hash: {analysis.image.hash}</p>
+                <p className="text-xs text-gray-400 font-mono mt-1">MIME: {analysis.image.mime_type} | Size: {(analysis.image.size_bytes / 1024).toFixed(2)} KB</p>
               </div>
 
               {/* Vision vs Text Grid */}
@@ -171,17 +162,20 @@ export default function ImageEvidenceViewer() {
                 <div className="p-3 bg-gray-800/50 rounded-lg border border-white/5">
                   <p className="text-xs text-gray-400 flex items-center gap-1 mb-2"><ScanFace className="w-3 h-3" /> Vision AI</p>
                   <p className="text-sm font-medium text-white flex justify-between">NSFW: <span className={analysis.vision.nsfw_score > 0.6 ? 'text-red-400' : 'text-gray-300'}>{(analysis.vision.nsfw_score * 100).toFixed(1)}%</span></p>
+                  <p className="text-sm font-medium text-white flex justify-between mt-1">Violence: <span className={analysis.vision.violence_score > 0.6 ? 'text-red-400' : 'text-gray-300'}>{(analysis.vision.violence_score * 100).toFixed(1)}%</span></p>
                 </div>
                 
                 <div className="p-3 bg-gray-800/50 rounded-lg border border-white/5">
                   <p className="text-xs text-gray-400 flex items-center gap-1 mb-2"><FileText className="w-3 h-3" /> Text AI (OCR)</p>
                   <p className="text-sm font-medium text-white flex justify-between">Toxicity: <span className={analysis.text_analysis?.toxicity > 0.5 ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.toxicity ? (analysis.text_analysis.toxicity * 100).toFixed(0) + '%' : 'N/A'}</span></p>
+                  <p className="text-sm font-medium text-white flex justify-between mt-1">Emotion: <span className="text-gray-300">{analysis.text_analysis?.emotion || 'N/A'}</span></p>
+                  <p className="text-sm font-medium text-white flex justify-between mt-1">PII: <span className={analysis.text_analysis?.contains_pii ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.contains_pii ? 'YES' : 'NO'}</span></p>
                 </div>
               </div>
 
               {/* OCR Text Box */}
               <div>
-                <p className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-1"><FileText className="w-4 h-4"/> Extracted Text</p>
+                <p className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-1"><FileText className="w-4 h-4"/> Extracted Text (Conf: {analysis.ocr.confidence ? (analysis.ocr.confidence * 100).toFixed(1) + '%' : 'N/A'})</p>
                 <div className="bg-black p-3 rounded-lg border border-gray-800 max-h-32 overflow-y-auto text-sm text-gray-300 font-mono">
                   {analysis.ocr.text || <span className="text-gray-600 italic">No text detected in image.</span>}
                 </div>
@@ -196,6 +190,13 @@ export default function ImageEvidenceViewer() {
                        <li key={key}>{val}</li>
                      ))}
                    </ul>
+                </div>
+              )}
+              
+              {analysis.risk.recommendation && (
+                <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                  <p className="text-xs font-bold text-indigo-400 mb-1">Recommendation</p>
+                  <p className="text-sm text-indigo-200">{analysis.risk.recommendation}</p>
                 </div>
               )}
               

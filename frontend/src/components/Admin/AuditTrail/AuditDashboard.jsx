@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { Shield, RefreshCw, Search, Download, Filter } from 'lucide-react';
+import { API_URL } from '../../../services/api';
 import AuditTable from './AuditTable';
 
 export default function AuditDashboard() {
@@ -20,7 +21,7 @@ export default function AuditDashboard() {
       if (filterAction) params.append('action', filterAction);
       if (filterActor) params.append('actor', filterActor);
       
-      const res = await fetch(`/api/audit?${params.toString()}`, {
+      const res = await fetch(`${API_URL}/api/audit?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${user.access_token}` }
       });
       

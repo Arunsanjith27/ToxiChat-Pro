@@ -7,7 +7,7 @@ export default function AuditTable({ logs }) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-gray-500">
         <Database className="w-12 h-12 mb-4 opacity-50" />
-        <p>No audit logs found.</p>
+        <p>No audit records available.</p>
       </div>
     );
   }

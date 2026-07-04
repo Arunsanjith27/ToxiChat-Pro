@@ -272,6 +272,7 @@ async def analyze_image_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
             # Merge text analysis outputs
             risk_data["risk_score"] = text_analysis.get("risk_score", 0)
             risk_data["overall_risk"] = text_analysis.get("risk_level", "LOW")
+            risk_data["recommendation"] = text_analysis.get("recommendation", "N/A")
             explanation = text_analysis.get("explanation", {})
             
         # Add Vision risk heuristic
@@ -290,7 +291,7 @@ async def analyze_image_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
             "ocr": raw_image_data["ocr"],
             "vision": raw_image_data["vision"],
             "text_analysis": {
-                "toxicity": text_analysis.get("toxicity_score"),
+                "toxicity": text_analysis.get("score"),
                 "emotion": text_analysis.get("emotion"),
                 "contains_pii": text_analysis.get("contains_pii")
             } if text_analysis else {},

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Send, Cpu, Sparkles, ShieldCheck, Download, Server, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../services/api';
 
 export default function ModeratorCopilotPanel({ conversationId }) {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export default function ModeratorCopilotPanel({ conversationId }) {
     setHistory(prev => [...prev, userMsg]);
 
     try {
-      const res = await fetch('/api/admin/copilot', {
+      const res = await fetch(`${API_URL}/api/admin/copilot`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

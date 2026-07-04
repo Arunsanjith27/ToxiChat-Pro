@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Lock, User } from 'lucide-react';
+import { API_URL } from '../../../services/api';
 
 export default function IncidentNotes({ incidentId, token }) {
   const [notes, setNotes] = useState([]);
@@ -8,7 +9,7 @@ export default function IncidentNotes({ incidentId, token }) {
 
   const fetchNotes = async () => {
     try {
-      const res = await fetch(`/api/incidents/${incidentId}/notes`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incidentId}/notes`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -29,7 +30,7 @@ export default function IncidentNotes({ incidentId, token }) {
     if (!newNote.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/incidents/${incidentId}/notes`, {
+      const res = await fetch(`${API_URL}/api/incidents/${incidentId}/notes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

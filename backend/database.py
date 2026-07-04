@@ -508,7 +508,8 @@ async def update_message_full(msg_id: str, sender: str, updates: dict) -> bool:
 
 
 async def update_user_profile(username: str, updates: dict) -> Optional[dict]:
-    allowed = {"display_name", "avatar_url", "bio"}
+    # profile fields editable by user; is_online is also allowed for presence tracking
+    allowed = {"display_name", "avatar_url", "bio", "is_online"}
     filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if not filtered:
         return await get_user(username)

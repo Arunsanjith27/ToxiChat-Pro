@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { FileText, Download, FileJson, FileType, CheckCircle, RefreshCw } from 'lucide-react';
+import { API_URL } from '../../../services/api';
 
 export default function ComplianceDashboard() {
   const { user } = useAuth();
@@ -17,7 +18,7 @@ export default function ComplianceDashboard() {
     setError('');
     
     try {
-      const res = await fetch('/api/reports/generate', {
+      const res = await fetch(`${API_URL}/api/reports/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,7 +43,7 @@ export default function ComplianceDashboard() {
 
   const downloadReport = (format) => {
     if (!report) return;
-    window.open(`/api/reports/download/${report.report_id}?format=${format}`, '_blank');
+    window.open(`${API_URL}/api/reports/download/${report.report_id}?format=${format}`, '_blank');
   };
 
   return (

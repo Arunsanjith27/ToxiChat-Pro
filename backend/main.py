@@ -13,7 +13,7 @@ import routers.auth_router
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-load_dotenv()
+load_dotenv(override=True)
 
 import models
 from models import (
@@ -36,10 +36,11 @@ from auth import (
 )
 
 RATE_LIMIT_MSG = int(os.getenv("RATE_LIMIT_MSG", "30"))
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS_ENV = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_ENV if origin.strip()]
+
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "uploads", "avatars")
 os.makedirs(AVATAR_DIR, exist_ok=True)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,12 +60,20 @@ async def lifespan(app: FastAPI):
     print("[OK] ToxiChat Pro API ready")
     yield
 
-
 app = FastAPI(title="ToxiChat Pro API", version="3.0.0", lifespan=lifespan)
+
+allow_origins = []
+allow_origin_regex = None
+
+if CORS_ORIGINS == ["*"]:
+    allow_origin_regex = ".*"
+else:
+    allow_origins = CORS_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if CORS_ORIGINS != ["*"] else ["*"],
+    allow_origins=allow_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

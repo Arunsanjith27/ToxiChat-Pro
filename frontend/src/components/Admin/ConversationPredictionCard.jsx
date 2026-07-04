@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, AlertTriangle, TrendingUp, TrendingDown, Clock, ShieldAlert, Zap, Info } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../services/api';
 
 export default function ConversationPredictionCard({ conversationId }) {
   const { user } = useAuth();
@@ -13,7 +14,7 @@ export default function ConversationPredictionCard({ conversationId }) {
     const fetchPrediction = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/conversation/prediction/${conversationId}`, {
+        const res = await fetch(`${API_URL}/api/conversation/prediction/${conversationId}`, {
           headers: { 'Authorization': `Bearer ${user.access_token}` }
         });
         if (res.ok) {
