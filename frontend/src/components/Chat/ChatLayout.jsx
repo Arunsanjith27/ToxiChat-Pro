@@ -5,7 +5,7 @@ import ChatWindow from './ChatWindow';
 import Dashboard from '../Dashboard/Dashboard';
 import ToxicityAlert from './ToxicityAlert';
 import ToxicityPreSendModal from './ToxicityPreSendModal';
-import ThemeToggle from '../Layout/ThemeToggle';
+import { ChatLayout as AppChatLayout } from '../Layout/ChatLayout';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL, chatApi, dashboardApi } from '../../services/api';
 
@@ -331,7 +331,7 @@ export default function ChatLayout() {
   const typingUser = activeChat && typingUsers[activeChat.username] ? activeChat.username : null;
 
   return (
-    <>
+    <AppChatLayout>
       <ToxicityAlert alert={alert} onClose={() => setAlert(null)} />
       <ToxicityPreSendModal
         warning={preSendWarning}
@@ -340,15 +340,8 @@ export default function ChatLayout() {
         onCancel={() => setPreSendWarning(null)}
       />
 
-      <div className="h-screen w-full flex flex-col p-4 md:p-6 max-w-7xl mx-auto pb-6 md:pb-10">
-        <div className="flex flex-wrap justify-end items-center gap-2 mb-4 w-full z-50 shrink-0">
-          <ThemeToggle />
-          <Link to="/profile" className="btn-secondary text-sm px-4 py-2 rounded-xl">Profile</Link>
-          {isAdmin && (
-            <Link to="/admin" className="btn-secondary text-sm px-4 py-2 rounded-xl border-violet-500/30 text-violet-300">
-              Admin
-            </Link>
-          )}
+      <div className="h-full w-full flex flex-col p-4 md:p-6">
+        <div className="flex justify-end items-center mb-4 w-full z-10 shrink-0">
           <button
             onClick={() => setShowDashboard(!showDashboard)}
             className={`px-4 py-2 rounded-xl text-sm font-medium border backdrop-blur-md transition-all ${
@@ -363,39 +356,39 @@ export default function ChatLayout() {
 
         <div className="flex-1 flex w-full min-h-0 relative">
           <Sidebar
-          user={user}
-          contacts={contacts}
-          activeChat={activeChat}
-          setActiveChat={(c) => { setActiveChat(c); setShowDashboard(false); }}
-          onLogout={logout}
-          unreadCounts={unreadCounts}
-        />
-
-        {showDashboard ? (
-          <Dashboard stats={dashboardStats} />
-        ) : (
-          <ChatWindow
             user={user}
+            contacts={contacts}
             activeChat={activeChat}
-            messages={chatMessages}
-            input={input}
-            setInput={setInput}
-            sendMessage={sendMessage}
-            receiverWarning={receiverWarning}
-            typingUser={typingUser}
-            isMuted={isMuted}
-            muteMessage={muteMessage}
-            onTypingStart={sendTypingStart}
-            onTypingStop={sendTypingStop}
-            onReaction={sendReaction}
-            onEdit={sendEdit}
-            onDelete={sendDelete}
-            onReadReceipt={sendReadReceipt}
-            conversationHealth={conversationHealth}
+            setActiveChat={(c) => { setActiveChat(c); setShowDashboard(false); }}
+            onLogout={logout}
+            unreadCounts={unreadCounts}
           />
-        )}
+
+          {showDashboard ? (
+            <Dashboard stats={dashboardStats} />
+          ) : (
+            <ChatWindow
+              user={user}
+              activeChat={activeChat}
+              messages={chatMessages}
+              input={input}
+              setInput={setInput}
+              sendMessage={sendMessage}
+              receiverWarning={receiverWarning}
+              typingUser={typingUser}
+              isMuted={isMuted}
+              muteMessage={muteMessage}
+              onTypingStart={sendTypingStart}
+              onTypingStop={sendTypingStop}
+              onReaction={sendReaction}
+              onEdit={sendEdit}
+              onDelete={sendDelete}
+              onReadReceipt={sendReadReceipt}
+              conversationHealth={conversationHealth}
+            />
+          )}
+        </div>
       </div>
-    </div>
-    </>
+    </AppChatLayout>
   );
 }

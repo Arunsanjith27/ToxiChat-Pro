@@ -61,7 +61,8 @@ export default function ImageEvidenceViewer() {
       `[TEXT SAFETY]\n` +
       `Toxicity: ${analysis.text_analysis?.toxicity || 0}\n` +
       `Emotion: ${analysis.text_analysis?.emotion || 'Neutral'}\n` +
-      `PII Present: ${analysis.text_analysis?.contains_pii ? 'YES' : 'NO'}\n\n` +
+      `PII Present: ${analysis.text_analysis?.contains_pii ? 'YES' : 'NO'}\n` +
+      (analysis.text_analysis?.pii_entities?.length > 0 ? `PII Entities: ${analysis.text_analysis.pii_entities.map(e => e.entity_type || e).join(', ')}\n\n` : '\n') +
       `[OVERALL RISK]\n` +
       `Level: ${analysis.risk.overall_risk}\n` +
       `Score: ${analysis.risk.risk_score}\n` +
@@ -167,11 +168,25 @@ export default function ImageEvidenceViewer() {
                 
                 <div className="p-3 bg-gray-800/50 rounded-lg border border-white/5">
                   <p className="text-xs text-gray-400 flex items-center gap-1 mb-2"><FileText className="w-3 h-3" /> Text AI (OCR)</p>
-                  <p className="text-sm font-medium text-white flex justify-between">Toxicity: <span className={analysis.text_analysis?.toxicity > 0.5 ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.toxicity ? (analysis.text_analysis.toxicity * 100).toFixed(0) + '%' : 'N/A'}</span></p>
-                  <p className="text-sm font-medium text-white flex justify-between mt-1">Emotion: <span className="text-gray-300">{analysis.text_analysis?.emotion || 'N/A'}</span></p>
+                  <p className="text-sm font-medium text-white flex justify-between">Toxicity: <span className={analysis.text_analysis?.toxicity > 0.5 ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.toxicity != null ? (analysis.text_analysis.toxicity * 100).toFixed(0) + '%' : '0%'}</span></p>
+                  <p className="text-sm font-medium text-white flex justify-between mt-1">Emotion: <span className="text-gray-300">{analysis.text_analysis?.emotion || 'Neutral'}</span></p>
                   <p className="text-sm font-medium text-white flex justify-between mt-1">PII: <span className={analysis.text_analysis?.contains_pii ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.contains_pii ? 'YES' : 'NO'}</span></p>
                 </div>
               </div>
+              
+              {/* PII Details if any */}
+              {analysis.text_analysis?.contains_pii && analysis.text_analysis?.pii_entities?.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold theme-text text-white">Detected PII</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.text_analysis.pii_entities.map((pii, idx) => (
+                      <span key={idx} className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs border border-amber-500/30">
+                        {pii.entity_type || pii}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* OCR Text Box */}
               <div>

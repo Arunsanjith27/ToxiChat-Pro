@@ -7,25 +7,15 @@ import ai.manager as ai_manager
 import ai.conversation_analytics as conversation_analytics
 import audit
 
-async def create_incident(conversation_id: str, priority: str, created_by: str) -> dict:
+async def create_incident(conversation_id: str, priority: str, created_by: str, participants: Optional[List[str]] = None, is_group: Optional[bool] = None) -> dict:
     """
     Creates an immutable incident snapshot from a conversation.
     """
+    from database import get_db, get_messages_for_conversation
     db = await get_db()
     
     # 1. Fetch Conversation History
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
-    else:
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
+    messages = await get_messages_for_conversation(db, conversation_id, participants, is_group, limit=100)
         
     if not messages:
         raise ValueError("Cannot create incident: Conversation not found or empty.")
@@ -45,6 +35,10 @@ async def create_incident(conversation_id: str, priority: str, created_by: str) 
     
     now_iso = datetime.datetime.utcnow().isoformat()
     incident_id = str(uuid.uuid4())
+    resolved_is_group = is_group if is_group is not None else (messages[0].get("is_group", False) if messages else False)
+    
+    print("MESSAGES SENDERS:", [m.get("sender") for m in messages])
+    print("MESSAGES SENDERS TYPES:", [type(m.get("sender")) for m in messages])
     
     # 3. Construct Incident Document
     incident = {
@@ -64,7 +58,8 @@ async def create_incident(conversation_id: str, priority: str, created_by: str) 
         "tags": [analytics_snapshot.get("conversation_state", "UNKNOWN")],
         "metadata": {
             "message_count": len(messages),
-            "participants": list(set([m["sender"] for m in messages]))
+            "participants": list(set([m["sender"] for m in messages if not isinstance(m.get("sender"), list)])),
+            "is_group": resolved_is_group
         }
     }
     

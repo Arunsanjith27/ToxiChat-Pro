@@ -1,0 +1,29 @@
+# ToxiChat Documentation Generation Tasks
+
+- `[x]` Research Backend Architecture
+  - `[x]` Read `main.py`, `database.py`, `models.py`, `auth.py`
+  - `[x]` Read `incidents.py`, `report_builder.py`, `compliance.py`
+  - `[x]` Read `ai/*.py` modules
+- `[x]` Research Frontend Architecture
+  - `[ ]` Read `App.js`, `api.js`
+  - `[ ]` Read Contexts
+  - `[ ]` Read Components
+- `[x]` Generate `01_PROJECT_OVERVIEW.md`
+- `[x]` Generate `02_ARCHITECTURE.md`
+- `[x]` Generate `03_BACKEND.md`
+- `[x]` Generate `04_FRONTEND.md`
+- `[x]` Generate `05_DATABASE.md`
+- `[x]` Generate `06_AI_PIPELINE.md`
+- `[x]` Generate `07_API_REFERENCE.md`
+- `[x]` Generate `08_WEBSOCKET.md`
+- `[x]` Generate `09_FEATURE_MATRIX.md`
+- `[x]` Generate `10_EXECUTION_FLOW.md`
+- `[x]` Generate `11_RUNTIME_BUGS.md`
+- `[x]` Generate `12_SECURITY_AUDIT.md`
+- `[x]` Generate `13_PERFORMANCE_AUDIT.md`
+- `[x]` Generate `14_DEPENDENCY_GRAPH.md`
+- `[x]` Generate `15_CODEBASE_MAP.md`
+- `[x]` Generate `16_RC1_HISTORY.md`
+- `[x]` Generate `17_RC2_HISTORY.md`
+- `[x]` Generate `18_FUTURE_ROADMAP.md`
+- `[x]` Generate `19_COMPLETE_PROJECT_KNOWLEDGEBASE.md`

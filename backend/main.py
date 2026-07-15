@@ -221,11 +221,18 @@ async def search_messages(q: str = "", limit: int = 50, username: str = Depends(
 class SummaryRequest(BaseModel):
     conversation_id: str
     summary_type: str = "moderator"
+    participants: Optional[List[str]] = None
+    is_group: Optional[bool] = None
 
 @app.post("/api/conversation/summary")
 async def generate_summary(req: SummaryRequest, username: str = Depends(get_current_user)):
     # Validate access (simplified for now, assumes username is authorized)
-    summary_res = await ai_manager.summarize_conversation(req.conversation_id, req.summary_type)
+    summary_res = await ai_manager.summarize_conversation(
+        req.conversation_id, 
+        req.summary_type,
+        participants=req.participants,
+        is_group=req.is_group
+    )
     return summary_res
 
 @app.post("/api/image/analyze", response_model=models.ImageAnalysisResponse)
@@ -251,17 +258,47 @@ async def analyze_audio_upload(file: UploadFile = File(...), username: str = Dep
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/conversation/analytics/{conversation_id}")
-async def get_conversation_analytics_api(conversation_id: str, username: str = Depends(get_current_user)):
+async def get_conversation_analytics_api(
+    conversation_id: str,
+    user1: Optional[str] = None,
+    user2: Optional[str] = None,
+    is_group: Optional[bool] = None,
+    username: str = Depends(get_current_user)
+):
     try:
-        res = await ai_manager.analyze_conversation_orchestrator(conversation_id)
+        participants = None
+        if user1 and user2:
+            participants = [user1, user2]
+        elif user1:
+            participants = [user1]
+        res = await ai_manager.analyze_conversation_orchestrator(
+            conversation_id,
+            participants=participants,
+            is_group=is_group
+        )
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/conversation/prediction/{conversation_id}", response_model=models.EscalationPredictionResponse)
-async def get_conversation_prediction_api(conversation_id: str, username: str = Depends(get_current_user)):
+async def get_conversation_prediction_api(
+    conversation_id: str,
+    user1: Optional[str] = None,
+    user2: Optional[str] = None,
+    is_group: Optional[bool] = None,
+    username: str = Depends(get_current_user)
+):
     try:
-        res = await ai_manager.predict_conversation_escalation(conversation_id)
+        participants = None
+        if user1 and user2:
+            participants = [user1, user2]
+        elif user1:
+            participants = [user1]
+        res = await ai_manager.predict_conversation_escalation(
+            conversation_id,
+            participants=participants,
+            is_group=is_group
+        )
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -270,7 +307,12 @@ async def get_conversation_prediction_api(conversation_id: str, username: str = 
 @app.post("/api/admin/copilot", response_model=models.CopilotResponse)
 async def ask_moderator_copilot_api(req: models.CopilotRequest, username: str = Depends(get_current_user)):
     try:
-        res = await ai_manager.ask_moderator_copilot(req.conversation_id, req.question)
+        res = await ai_manager.ask_moderator_copilot(
+            req.conversation_id,
+            req.question,
+            participants=req.participants,
+            is_group=req.is_group
+        )
         
         # Async Audit Log
         await audit.log_event(
@@ -293,11 +335,19 @@ async def ask_moderator_copilot_api(req: models.CopilotRequest, username: str = 
 @app.post("/api/incidents")
 async def create_incident_api(req: models.CreateIncidentRequest, username: str = Depends(get_current_user)):
     try:
-        return await incidents.create_incident(req.conversation_id, req.priority, created_by=username)
+        return await incidents.create_incident(
+            req.conversation_id, 
+            req.priority, 
+            created_by=username,
+            participants=req.participants,
+            is_group=req.is_group
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=tb)
 
 @app.get("/api/incidents")
 async def list_incidents_api(status: Optional[str] = None, priority: Optional[str] = None, username: str = Depends(get_current_user)):
@@ -945,3 +995,4 @@ async def ai_health(username: str = Depends(get_current_user)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=True)
+

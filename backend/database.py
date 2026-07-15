@@ -253,6 +253,83 @@ async def update_message_status(msg_id: str, status: str):
         await db.messages.update_one({"id": msg_id}, {"$set": {"status": status}})
 
 
+async def get_messages_for_conversation(db, conversation_id: str, participants: Optional[List[str]] = None, is_group: Optional[bool] = None, limit: int = 1000) -> List[dict]:
+    """
+    Unified conversation messages retrieval helper.
+    Supports DMs, Group Chats, and usernames containing underscores.
+    Falls back to a robust database-level expression match if participants are not explicitly provided.
+    """
+    if _use_memory:
+        # In-memory mock DB fallback
+        if participants and len(participants) == 2 and not is_group:
+            u1, u2 = participants[0], participants[1]
+            msgs = [m for m in _memory_store["messages"]
+                    if not m.get("is_group") and
+                    ((m["sender"] == u1 and m["receiver"] == u2) or
+                     (m["sender"] == u2 and m["receiver"] == u1))]
+            return msgs[-limit:]
+        elif is_group or (participants and len(participants) == 1):
+            group_name = participants[0] if participants else conversation_id
+            msgs = [m for m in _memory_store["messages"]
+                    if m.get("is_group") and m["receiver"] == group_name]
+            return msgs[-limit:]
+        else:
+            # Fallback split check for memory store (best effort)
+            if "_" in conversation_id:
+                parts = conversation_id.split("_")
+                for i in range(1, len(parts)):
+                    u1 = "_".join(parts[:i])
+                    u2 = "_".join(parts[i:])
+                    msgs = [m for m in _memory_store["messages"]
+                            if not m.get("is_group") and
+                            ((m["sender"] == u1 and m["receiver"] == u2) or
+                             (m["sender"] == u2 and m["receiver"] == u1))]
+                    if msgs:
+                        return msgs[-limit:]
+            # Group check
+            msgs = [m for m in _memory_store["messages"]
+                    if m.get("is_group") and m["receiver"] == conversation_id]
+            if msgs:
+                return msgs[-limit:]
+            return []
+
+    # Real MongoDB query
+    if participants and len(participants) == 2 and not is_group:
+        u1, u2 = participants[0], participants[1]
+        query = {
+            "$or": [
+                {"sender": u1, "receiver": u2, "is_group": False},
+                {"sender": u2, "receiver": u1, "is_group": False}
+            ]
+        }
+    elif is_group or (participants and len(participants) == 1):
+        group_name = participants[0] if participants else conversation_id
+        query = {"receiver": group_name, "is_group": True}
+    else:
+        # Fallback to robust database-level concat lookup
+        query = {
+            "$or": [
+                {
+                    "is_group": False,
+                    "$expr": {
+                        "$or": [
+                            {"$eq": [{"$concat": ["$sender", "_", "$receiver"]}, conversation_id]},
+                            {"$eq": [{"$concat": ["$receiver", "_", "$sender"]}, conversation_id]}
+                        ]
+                    }
+                },
+                {
+                    "is_group": True,
+                    "receiver": conversation_id
+                }
+            ]
+        }
+        
+    cursor = db.messages.find(query, {"_id": 0}).sort("timestamp", 1)
+    msgs = await cursor.to_list(length=limit)
+    return msgs
+
+
 async def get_messages(user1: str, user2: str, limit: int = 50) -> List[dict]:
     if _use_memory:
         msgs = [m for m in _memory_store["messages"]
@@ -687,10 +764,10 @@ async def get_active_conversations(limit: int = 50) -> List[dict]:
     conversations = []
     for r in results:
         _id = r["_id"]
-        if _id["is_group"]:
-            conversations.append({"type": "group", "name": _id["receiver"], "last_activity": r["last_activity"]})
+        if _id.get("is_group", False):
+            conversations.append({"type": "group", "name": _id.get("receiver"), "last_activity": r.get("last_activity")})
         else:
-            conversations.append({"type": "dm", "user1": _id["sender"], "user2": _id["receiver2"], "last_activity": r["last_activity"]})
+            conversations.append({"type": "dm", "user1": _id.get("sender"), "user2": _id.get("receiver2"), "last_activity": r.get("last_activity")})
             
     return conversations
 

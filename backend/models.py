@@ -219,6 +219,8 @@ class EscalationPredictionResponse(BaseModel):
 class CopilotRequest(BaseModel):
     conversation_id: str
     question: str
+    participants: Optional[List[str]] = None
+    is_group: Optional[bool] = None
 
 class CopilotResponse(BaseModel):
     answer: str
@@ -230,6 +232,8 @@ class CopilotResponse(BaseModel):
 class CreateIncidentRequest(BaseModel):
     conversation_id: str
     priority: str
+    participants: Optional[List[str]] = None
+    is_group: Optional[bool] = None
 
 class UpdateIncidentStatusRequest(BaseModel):
     status: str

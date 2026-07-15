@@ -99,5 +99,6 @@ def analyze_conversation(messages: List[dict]) -> dict:
         "rewrites_accepted": rewrite_count,
         "conversation_health_score": int(health_score),
         "critical_events": critical_events,
-        "conversation_state": conversation_state
+        "conversation_state": conversation_state,
+        "active_models": ["toxic-bert", "emotion-english-distilroberta-base", "risk-engine-v1"]
     }

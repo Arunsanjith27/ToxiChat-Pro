@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Mic, ShieldAlert, FileText, Download, Activity, FileAudio, PlayCircle, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-
+import { adminApi } from '../../services/api';
 export default function AudioEvidenceViewer() {
   const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState(null);
@@ -36,20 +36,7 @@ export default function AudioEvidenceViewer() {
     formData.append("file", selectedFile);
 
     try {
-      const res = await fetch('/api/audio/analyze', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user.access_token}`
-        },
-        body: formData
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Upload failed');
-      }
-
-      const data = await res.json();
+      const data = await adminApi.analyzeAudio(selectedFile, user.access_token);
       setAnalysis(data);
     } catch (err) {
       setError(err.message);
@@ -160,6 +147,9 @@ export default function AudioEvidenceViewer() {
                     {analysis.risk.overall_risk} RISK
                   </span>
                   <span className="px-2 py-1 text-xs font-medium bg-gray-800 text-gray-300 rounded-md">
+                    Score: {analysis.risk.risk_score}
+                  </span>
+                  <span className="px-2 py-1 text-xs font-medium bg-gray-800 text-gray-300 rounded-md">
                     Language: {analysis.audio.language.toUpperCase()}
                   </span>
                 </div>
@@ -184,8 +174,9 @@ export default function AudioEvidenceViewer() {
               <div className="p-3 bg-gray-800/50 rounded-lg border border-white/5">
                 <p className="text-xs text-gray-400 flex items-center gap-1 mb-2"><FileText className="w-3 h-3" /> Content AI Analytics</p>
                 <div className="flex justify-between items-center text-sm font-medium">
-                  <span className="text-white">Toxicity: <span className={analysis.text_analysis?.toxicity > 0.5 ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.toxicity ? (analysis.text_analysis.toxicity * 100).toFixed(0) + '%' : 'N/A'}</span></span>
+                  <span className="text-white">Toxicity: <span className={analysis.text_analysis?.toxicity > 0.5 ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.toxicity != null ? (analysis.text_analysis.toxicity * 100).toFixed(0) + '%' : '0%'}</span></span>
                   <span className="text-white">Emotion: <span className="text-gray-300">{analysis.text_analysis?.emotion || 'Neutral'}</span></span>
+                  <span className="text-white">PII: <span className={analysis.text_analysis?.contains_pii ? 'text-red-400' : 'text-gray-300'}>{analysis.text_analysis?.contains_pii ? 'YES' : 'NO'}</span></span>
                 </div>
               </div>
 
@@ -220,6 +211,13 @@ export default function AudioEvidenceViewer() {
                        <li key={key}>{val}</li>
                      ))}
                    </ul>
+                </div>
+              )}
+              
+              {analysis.risk.recommendation && (
+                <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                  <p className="text-xs font-bold text-purple-400 mb-1">Recommendation</p>
+                  <p className="text-sm text-purple-200">{analysis.risk.recommendation}</p>
                 </div>
               )}
               

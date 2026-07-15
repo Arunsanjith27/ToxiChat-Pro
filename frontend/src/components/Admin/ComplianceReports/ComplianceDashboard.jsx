@@ -41,9 +41,29 @@ export default function ComplianceDashboard() {
     }
   };
 
-  const downloadReport = (format) => {
+  const downloadReport = async (format) => {
     if (!report) return;
-    window.open(`${API_URL}/api/reports/download/${report.report_id}?format=${format}`, '_blank');
+    try {
+      const res = await fetch(`${API_URL}/api/reports/download/${report.report_id}?format=${format}`, {
+        headers: {
+          'Authorization': `Bearer ${user.access_token}`
+        }
+      });
+      if (!res.ok) throw new Error("Download failed");
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report_${report.report_id}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to download report.");
+    }
   };
 
   return (

@@ -4,7 +4,7 @@ import { Camera, Save, ArrowLeft, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { profileApi, avatarUrl } from '../../services/api';
-import ThemeToggle from '../Layout/ThemeToggle';
+import { AdminLayout } from '../Layout/AdminLayout';
 import Avatar from '../Common/Avatar';
 
 const TIER_COLORS = {
@@ -59,16 +59,9 @@ export default function Profile() {
   const score = user?.reputation_score ?? 100;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10">
-      <div className="absolute top-6 right-6 z-50 flex gap-2">
-        <ThemeToggle />
-        <Link to="/chat" className="btn-secondary text-sm px-4 py-2 rounded-xl inline-flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> Chat
-        </Link>
-      </div>
-
+    <AdminLayout maxWidth="lg">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="glass-panel w-full max-w-lg p-8 rounded-3xl">
+        className="glass-panel w-full p-8 rounded-3xl mt-10">
         <h1 className="text-2xl font-bold theme-text mb-6">Profile Settings</h1>
 
         <div className="flex flex-col items-center mb-8">
@@ -109,6 +102,6 @@ export default function Profile() {
           </button>
         </form>
       </motion.div>
-    </div>
+    </AdminLayout>
   );
 }

@@ -1,3 +1,4 @@
+from typing import Optional, List
 import ml_service
 import ai.emotion_service as emotion_service
 import ai.pii_service as pii_service
@@ -104,32 +105,17 @@ async def analyze_message(text: str, context: list = None) -> dict:
 
     return tox_data
 
-async def summarize_conversation(conversation_id: str, summary_type: str = "moderator") -> dict:
+async def summarize_conversation(conversation_id: str, summary_type: str = "moderator", participants: Optional[List[str]] = None, is_group: Optional[bool] = None) -> dict:
     """
     Orchestrates the Conversation Intelligence Engine.
     1. Fetches conversation history.
     2. Runs deterministic analytics on it.
     3. Passes to Conversation Intelligence for NLP summarization.
     """
-    from database import get_db
+    from database import get_db, get_messages_for_conversation
     db = await get_db()
     
-    # Simple split of conversation_id assuming format user1_user2
-    # In a real app we might pass user1 and user2 or have a true conversation_id
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        # Fetch messages
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=1000)
-    else:
-        # Group fallback
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=1000)
+    messages = await get_messages_for_conversation(db, conversation_id, participants, is_group, limit=1000)
         
     if not messages:
         return {
@@ -147,51 +133,43 @@ async def summarize_conversation(conversation_id: str, summary_type: str = "mode
         "Conversation Analytics",
         conversation_analytics.analyze_conversation,
         messages,
-        fallback={"total_messages": len(messages), "conversation_health_score": 0, "conversation_state": "UNKNOWN", "average_risk_score": 0, "overall_toxicity_ratio": 0.0},
-        timeout=5.0,
-        retries=1
+        fallback={
+            "conversation_state": "UNKNOWN",
+            "average_risk_score": 0
+        },
+        timeout=5.0
     )
     
-    # 3. Generate Generative AI Summary
+    # 3. Generate Summary using reasoning layer
     summary_result = await resilience.execute_resilient(
-        "Conversation Intelligence",
+        "Conversation Summary",
         conversation_intelligence.generate_summary,
-        messages, analytics_res, summary_type,
+        messages,
+        analytics_res,
+        summary_type,
         fallback={
-            "summary_text": "Summary generation failed or timed out.",
+            "summary_text": "Conversation summary generation failed due to timeout.",
             "model_used": "None",
             "generation_time_ms": 0,
-            "conversation_health": analytics_res.get("conversation_health_score", 0),
+            "conversation_health": 0,
             "risk_level": "UNKNOWN",
             "dominant_emotion": "Neutral",
-            "recommendation": "Manual review recommended due to system failure."
+            "recommendation": "No action required."
         },
-        timeout=60.0,
-        retries=1
+        timeout=10.0
     )
     
     return summary_result
 
-async def analyze_conversation_orchestrator(conversation_id: str) -> dict:
+async def analyze_conversation_orchestrator(conversation_id: str, participants: Optional[List[str]] = None, is_group: Optional[bool] = None) -> dict:
     """
     Orchestrates the Conversation Analytics Engine.
     Fetches the conversation history and passes it to the analytics engine.
     """
-    from database import get_db
+    from database import get_db, get_messages_for_conversation
     db = await get_db()
     
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=1000)
-    else:
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=1000)
+    messages = await get_messages_for_conversation(db, conversation_id, participants, is_group, limit=1000)
         
     if not messages:
         return {
@@ -291,10 +269,11 @@ async def analyze_image_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
             "ocr": raw_image_data["ocr"],
             "vision": raw_image_data["vision"],
             "text_analysis": {
-                "toxicity": text_analysis.get("score"),
-                "emotion": text_analysis.get("emotion"),
-                "contains_pii": text_analysis.get("contains_pii")
-            } if text_analysis else {},
+                "toxicity": text_analysis.get("score", 0.0) if text_analysis else 0.0,
+                "emotion": text_analysis.get("emotion", "Neutral") if text_analysis else "Neutral",
+                "contains_pii": text_analysis.get("contains_pii", False) if text_analysis else False,
+                "pii_entities": text_analysis.get("pii_entities", []) if text_analysis else []
+            },
             "risk": risk_data,
             "explanation": explanation
         }
@@ -341,6 +320,7 @@ async def analyze_audio_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
             
             risk_data["risk_score"] = text_analysis.get("risk_score", 0)
             risk_data["overall_risk"] = text_analysis.get("risk_level", "LOW")
+            risk_data["recommendation"] = text_analysis.get("recommendation", "N/A")
             explanation = text_analysis.get("explanation", {})
             
         # 4. Construct unified response
@@ -354,10 +334,11 @@ async def analyze_audio_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
             },
             "transcript": raw_audio_data["transcript"],
             "text_analysis": {
-                "toxicity": text_analysis.get("toxicity_score"),
-                "emotion": text_analysis.get("emotion"),
-                "contains_pii": text_analysis.get("contains_pii")
-            } if text_analysis else {},
+                "toxicity": text_analysis.get("score", 0.0) if text_analysis else 0.0,
+                "emotion": text_analysis.get("emotion", "Neutral") if text_analysis else "Neutral",
+                "contains_pii": text_analysis.get("contains_pii", False) if text_analysis else False,
+                "pii_entities": text_analysis.get("pii_entities", []) if text_analysis else []
+            },
             "risk": risk_data,
             "explanation": explanation,
             "metadata": raw_audio_data["metadata"]
@@ -367,27 +348,16 @@ async def analyze_audio_orchestrator(file_bytes: bytes, mime_type: str) -> dict:
         os.remove(tmp_path)
 
 
-async def predict_conversation_escalation(conversation_id: str) -> dict:
+async def predict_conversation_escalation(conversation_id: str, participants: Optional[List[str]] = None, is_group: Optional[bool] = None) -> dict:
     """
     Predicts if a conversation will escalate to HIGH or CRITICAL risk.
     Uses cached analytics and passes to the escalation engine.
     """
-    from database import get_db
+    from database import get_db, get_messages_for_conversation
     db = await get_db()
     
     # 1. Fetch messages (last 50 for deep context)
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=50)
-    else:
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=50)
+    messages = await get_messages_for_conversation(db, conversation_id, participants, is_group, limit=50)
         
     if not messages:
         return escalation_engine._build_response(0, "LOW", 0, "STABLE", ["No messages"], "N/A")
@@ -429,26 +399,16 @@ async def predict_conversation_escalation(conversation_id: str) -> dict:
     
     return prediction
 
-async def ask_moderator_copilot(conversation_id: str, question: str) -> dict:
+
+async def ask_moderator_copilot(conversation_id: str, question: str, participants: Optional[List[str]] = None, is_group: Optional[bool] = None) -> dict:
     """
     Acts as the entry point for AI Moderator Copilot queries.
     Builds context and passes it to the Reasoning Layer.
     """
-    from database import get_db
+    from database import get_db, get_messages_for_conversation
     db = await get_db()
     
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
-    else:
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
+    messages = await get_messages_for_conversation(db, conversation_id, participants, is_group, limit=100)
         
     if not messages:
         return {
@@ -464,7 +424,7 @@ async def ask_moderator_copilot(conversation_id: str, question: str) -> dict:
         "Copilot Context",
         copilot_context.build_copilot_context,
         messages,
-        fallback="Context generation failed.",
+        fallback={"analytics": {}, "prediction": {}, "insights": {}},
         timeout=5.0,
         retries=1
     )

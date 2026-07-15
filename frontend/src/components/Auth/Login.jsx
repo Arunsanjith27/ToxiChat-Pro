@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Shield, UserPlus, LogIn } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import ThemeToggle from '../Layout/ThemeToggle';
+import { AuthLayout } from '../Layout/AuthLayout';
 
 export default function Login() {
   const { login, register, loading } = useAuth();
@@ -30,86 +30,68 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative px-4">
-      <div className="absolute top-6 right-6 z-50">
-        <ThemeToggle />
+    <AuthLayout title="ToxiChat" subtitle="AI-Powered Safe Messaging Platform">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          required
+          className="theme-input w-full rounded-xl px-4 py-3"
+        />
+
+        {isRegister && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+            <input
+              placeholder="Display Name (optional)"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              className="theme-input w-full rounded-xl px-4 py-3"
+            />
+          </motion.div>
+        )}
+
+        <input
+          placeholder="Password"
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+          className="theme-input w-full rounded-xl px-4 py-3"
+        />
+
+        {error && <div className="error-banner">{error}</div>}
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          type="submit"
+          disabled={loading}
+          className="btn-primary w-full flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : isRegister ? (
+            <><UserPlus className="w-5 h-5" /> Create Account</>
+          ) : (
+            <><LogIn className="w-5 h-5" /> Sign In</>
+          )}
+        </motion.button>
+      </form>
+
+      <div className="mt-6 flex flex-col items-center gap-2">
+        <button
+          onClick={() => { setIsRegister(!isRegister); setError(''); }}
+          className="text-sm theme-muted hover:theme-text transition-colors"
+        >
+          {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
+        </button>
+        {!isRegister && (
+          <Link to="/forgot-password" className="text-sm text-emerald-400 hover:text-emerald-300">
+            Forgot password?
+          </Link>
+        )}
       </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel w-full max-w-md p-8 rounded-3xl"
-      >
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/30">
-            <Shield className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold theme-text tracking-tight">ToxiChat</h1>
-          <p className="theme-muted mt-2 text-sm text-center">AI-Powered Safe Messaging Platform</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            placeholder="Username"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            required
-            className="theme-input w-full rounded-xl px-4 py-3"
-          />
-
-          {isRegister && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-              <input
-                placeholder="Display Name (optional)"
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
-                className="theme-input w-full rounded-xl px-4 py-3"
-              />
-            </motion.div>
-          )}
-
-          <input
-            placeholder="Password"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            className="theme-input w-full rounded-xl px-4 py-3"
-          />
-
-          {error && <div className="error-banner">{error}</div>}
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : isRegister ? (
-              <><UserPlus className="w-5 h-5" /> Create Account</>
-            ) : (
-              <><LogIn className="w-5 h-5" /> Sign In</>
-            )}
-          </motion.button>
-        </form>
-
-        <div className="mt-6 flex flex-col items-center gap-2">
-          <button
-            onClick={() => { setIsRegister(!isRegister); setError(''); }}
-            className="text-sm theme-muted hover:theme-text transition-colors"
-          >
-            {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
-          </button>
-          {!isRegister && (
-            <Link to="/forgot-password" className="text-sm text-emerald-400 hover:text-emerald-300">
-              Forgot password?
-            </Link>
-          )}
-        </div>
-      </motion.div>
-    </div>
+    </AuthLayout>
   );
 }

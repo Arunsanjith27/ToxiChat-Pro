@@ -86,11 +86,6 @@ export default function Sidebar({ user, contacts, activeChat, setActiveChat, onL
         )}
       </div>
 
-      <div className="p-3 border-t border-white/5">
-        <button onClick={onLogout} className="w-full py-2.5 rounded-xl btn-secondary text-sm flex items-center justify-center gap-2 hover:text-red-400 hover:border-red-500/30">
-          <LogOut className="w-4 h-4" /> Sign Out
-        </button>
-      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, TrendingUp, TrendingDown, Clock, ShieldAlert, 
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../services/api';
 
-export default function ConversationPredictionCard({ conversationId }) {
+export default function ConversationPredictionCard({ conversationId, participants, isGroup }) {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,7 +14,21 @@ export default function ConversationPredictionCard({ conversationId }) {
     const fetchPrediction = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API_URL}/api/conversation/prediction/${conversationId}`, {
+        let url = `${API_URL}/api/conversation/prediction/${conversationId}`;
+        const params = new URLSearchParams();
+        if (participants) {
+          if (participants[0]) params.append('user1', participants[0]);
+          if (participants[1]) params.append('user2', participants[1]);
+        }
+        if (isGroup !== undefined) {
+          params.append('is_group', isGroup);
+        }
+        const queryString = params.toString();
+        if (queryString) {
+          url += `?${queryString}`;
+        }
+
+        const res = await fetch(url, {
           headers: { 'Authorization': `Bearer ${user.access_token}` }
         });
         if (res.ok) {
@@ -33,7 +47,7 @@ export default function ConversationPredictionCard({ conversationId }) {
     // Poll every 30 seconds for live investigations
     const interval = setInterval(fetchPrediction, 30000);
     return () => clearInterval(interval);
-  }, [conversationId, user.access_token]);
+  }, [conversationId, participants, isGroup, user.access_token]);
 
   if (loading && !data) {
     return (

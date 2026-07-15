@@ -3,7 +3,7 @@ import { Send, Cpu, Sparkles, ShieldCheck, Download, Server, AlertCircle } from 
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../services/api';
 
-export default function ModeratorCopilotPanel({ conversationId }) {
+export default function ModeratorCopilotPanel({ conversationId, participants, isGroup }) {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [history, setHistory] = useState([]);
@@ -36,7 +36,12 @@ export default function ModeratorCopilotPanel({ conversationId }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user.access_token}`
         },
-        body: JSON.stringify({ conversation_id: conversationId, question: currentQuery })
+        body: JSON.stringify({ 
+          conversation_id: conversationId, 
+          question: currentQuery,
+          participants: participants,
+          is_group: isGroup
+        })
       });
 
       if (!res.ok) throw new Error("Copilot Engine failed to respond.");

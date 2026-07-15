@@ -19,18 +19,12 @@ async def build_report_object(incident_id: str, generated_by: str) -> Dict[str, 
     
     # 2. Fetch Conversation History (for snapshot)
     conversation_id = incident.get("conversation_id")
-    if "_" in conversation_id:
-        u1, u2 = conversation_id.split("_", 1)
-        cursor = db.messages.find({
-            "$or": [
-                {"sender": u1, "receiver": u2},
-                {"sender": u2, "receiver": u1}
-            ]
-        }, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
-    else:
-        cursor = db.messages.find({"receiver": conversation_id}, {"_id": 0}).sort("timestamp", 1)
-        messages = await cursor.to_list(length=100)
+    messages = []
+    if conversation_id:
+        from database import get_messages_for_conversation
+        participants = incident.get("metadata", {}).get("participants")
+        is_group = incident.get("metadata", {}).get("is_group")
+        messages = await get_messages_for_conversation(db, conversation_id, participants=participants, is_group=is_group, limit=100)
         
     # 3. Fetch Audit Trail for this incident
     audit_trail = await audit.get_incident_history(incident_id)

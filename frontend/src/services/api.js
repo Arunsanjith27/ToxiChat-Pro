@@ -75,6 +75,11 @@ export const adminApi = {
     form.append('file', file);
     return request('/api/image/analyze', { method: 'POST', body: form }, token);
   },
+  analyzeAudio: (file, token) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request('/api/audio/analyze', { method: 'POST', body: form }, token);
+  },
 };
 
 export function avatarUrl(path) {

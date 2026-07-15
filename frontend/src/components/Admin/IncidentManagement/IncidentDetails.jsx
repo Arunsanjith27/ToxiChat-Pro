@@ -132,19 +132,19 @@ export default function IncidentDetails({ incident, token, onBack, onUpdate }) {
                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                  <div className="p-3 bg-black/40 rounded-lg border border-white/5">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">Messages</p>
-                   <p className="text-lg font-mono text-white">{incident.metadata?.message_count}</p>
+                   <p className="text-lg font-mono text-white">{incident.metadata?.message_count ?? 'N/A'}</p>
                  </div>
                  <div className="p-3 bg-black/40 rounded-lg border border-white/5">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">Health</p>
-                   <p className="text-lg font-mono text-white">{incident.analytics_snapshot?.conversation_health_score}/100</p>
+                   <p className="text-lg font-mono text-white">{incident.analytics_snapshot?.conversation_health_score ?? 'N/A'}/100</p>
                  </div>
                  <div className="p-3 bg-black/40 rounded-lg border border-white/5">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">Risk Trend</p>
-                   <p className="text-lg font-bold text-white">{incident.prediction_snapshot?.prediction?.trend}</p>
+                   <p className="text-lg font-bold text-white">{incident.prediction_snapshot?.prediction?.trend ?? 'UNKNOWN'}</p>
                  </div>
                  <div className="p-3 bg-black/40 rounded-lg border border-white/5">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">State</p>
-                   <p className="text-lg font-bold text-red-400">{incident.analytics_snapshot?.conversation_state}</p>
+                   <p className="text-lg font-bold text-red-400">{incident.analytics_snapshot?.conversation_state ?? 'UNKNOWN'}</p>
                  </div>
                </div>
             </div>

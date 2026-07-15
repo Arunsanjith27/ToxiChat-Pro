@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { FileText, Download, RefreshCw, Copy, Activity, ShieldAlert, Heart } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../services/api';
 
-export default function ConversationSummaryPanel({ conversationId }) {
+export default function ConversationSummaryPanel({ conversationId, participants, isGroup }) {
   const { user } = useAuth();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -13,7 +14,7 @@ export default function ConversationSummaryPanel({ conversationId }) {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/conversation/summary', {
+      const response = await fetch(`${API_URL}/api/conversation/summary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -21,7 +22,9 @@ export default function ConversationSummaryPanel({ conversationId }) {
         },
         body: JSON.stringify({
           conversation_id: conversationId,
-          summary_type: summaryType
+          summary_type: summaryType,
+          participants: participants,
+          is_group: isGroup
         })
       });
 

@@ -38,7 +38,11 @@ def build_copilot_context(messages: list) -> dict:
             exp = m.get("explanation", {})
             if isinstance(exp, dict):
                 for k, v in exp.items():
-                    flagged_reasons.append(v)
+                    if isinstance(v, list):
+                        for item in v:
+                            flagged_reasons.append(str(item))
+                    else:
+                        flagged_reasons.append(str(v))
                     
         emo = m.get("emotion", "neutral")
         dominant_emotions[emo] = dominant_emotions.get(emo, 0) + 1

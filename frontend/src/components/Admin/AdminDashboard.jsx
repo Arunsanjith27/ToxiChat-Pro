@@ -4,7 +4,8 @@ import { ShieldAlert, UserX, UserCheck, Shield, RefreshCw, ArrowLeft, Activity, 
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminApi } from '../../services/api';
-import ThemeToggle from '../Layout/ThemeToggle';
+import { AdminLayout } from '../Layout/AdminLayout';
+import { PageHeader } from '../Layout/PageHeader';
 import Avatar from '../Common/Avatar';
 import ConversationSummaryPanel from '../Dashboard/ConversationSummaryPanel';
 import ImageEvidenceViewer from './ImageEvidenceViewer';
@@ -67,22 +68,12 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold theme-text flex items-center gap-2">
-            <Shield className="w-8 h-8 text-emerald-400" /> Admin & ModOps
-          </h1>
-          <p className="theme-muted text-sm mt-1">Manage flagged content and incidents</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={load} className="btn-secondary p-2 rounded-xl"><RefreshCw className="w-4 h-4" /></button>
-          <ThemeToggle />
-          <Link to="/chat" className="btn-secondary text-sm px-4 py-2 rounded-xl inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> Chat
-          </Link>
-        </div>
-      </div>
+    <AdminLayout maxWidth="7xl">
+      <PageHeader 
+        title={<span className="flex items-center gap-2"><Shield className="w-8 h-8 text-emerald-400" /> Admin & ModOps</span>} 
+        description="Manage flagged content and incidents"
+        actions={<button onClick={load} className="btn-secondary p-2 rounded-xl"><RefreshCw className="w-4 h-4" /></button>}
+      />
 
       <div className="flex gap-2 mb-6 border-b border-white/5 pb-2">
         <button 
@@ -162,7 +153,7 @@ export default function AdminDashboard() {
                   <h3 className="text-sm font-bold theme-text">{conv.target}</h3>
                   <p className="text-xs text-red-400 font-medium">State: {conv.analytics.conversation_state} | Risk Score: {conv.analytics.average_risk_score}</p>
                   <p className="text-[10px] theme-muted mt-1">
-                    Toxicity: {(conv.analytics.overall_toxicity_ratio * 100).toFixed(0)}% | PII: {conv.analytics.pii_instances} | Health: {conv.analytics.conversation_health_score}/100
+                    Toxicity: {((conv.analytics.overall_toxicity_ratio || 0) * 100).toFixed(0)}% | PII: {conv.analytics.pii_instances} | Health: {conv.analytics.conversation_health_score}/100
                   </p>
                 </div>
                 <button
@@ -195,7 +186,7 @@ export default function AdminDashboard() {
               <div key={m.id || i} className="p-4 rounded-xl bg-black/10 border border-white/5">
                 <div className="flex justify-between mb-1">
                   <span className="text-emerald-400 text-sm font-medium">{m.sender}</span>
-                  <span className="text-red-400 text-xs font-bold">{(m.toxicity_score * 100).toFixed(0)}%</span>
+                  <span className="text-red-400 text-xs font-bold">{((m.score || m.toxicity_score || 0) * 100).toFixed(0)}%</span>
                 </div>
                 <p className="theme-text text-sm truncate">{m.text}</p>
                 <p className="theme-muted text-[10px] mt-1">{m.timestamp ? new Date(m.timestamp).toLocaleString() : ''}</p>
@@ -259,7 +250,7 @@ export default function AdminDashboard() {
               </button>
             </div>
             <div className="p-6 overflow-y-auto space-y-6">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                   <p className="text-xs text-gray-400 mb-1">State</p>
                   <p className={`text-xl font-bold ${selectedAnalytics.analytics.conversation_state === 'CRITICAL' ? 'text-red-400' : 'text-amber-400'}`}>
@@ -273,6 +264,10 @@ export default function AdminDashboard() {
                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                   <p className="text-xs text-gray-400 mb-1">Avg Risk</p>
                   <p className="text-xl font-bold text-white">{selectedAnalytics.analytics.average_risk_score}</p>
+                </div>
+                <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                  <p className="text-xs text-gray-400 mb-1">Active Models</p>
+                  <p className="text-xl font-bold text-white">{selectedAnalytics.analytics.active_models?.length || 0}</p>
                 </div>
               </div>
               
@@ -298,11 +293,37 @@ export default function AdminDashboard() {
 
               {/* Add the new Conversation Intelligence Summary Panel here */}
               <div className="mt-6 space-y-6">
-                <ConversationPredictionCard conversationId={selectedAnalytics.target} />
-                <div className="grid lg:grid-cols-2 gap-6">
-                  <ConversationSummaryPanel conversationId={selectedAnalytics.target} />
-                  <ModeratorCopilotPanel conversationId={selectedAnalytics.target} />
-                </div>
+                {(() => {
+                  const rawConversationId = selectedAnalytics.type === 'group' 
+                    ? selectedAnalytics.group_name 
+                    : `${selectedAnalytics.user1}_${selectedAnalytics.user2}`;
+                  const participants = selectedAnalytics.type === 'group'
+                    ? [selectedAnalytics.group_name]
+                    : [selectedAnalytics.user1, selectedAnalytics.user2];
+                  const isGroup = selectedAnalytics.type === 'group';
+                  
+                  return (
+                    <>
+                      <ConversationPredictionCard 
+                        conversationId={rawConversationId} 
+                        participants={participants}
+                        isGroup={isGroup}
+                      />
+                      <div className="grid lg:grid-cols-2 gap-6">
+                        <ConversationSummaryPanel 
+                          conversationId={rawConversationId} 
+                          participants={participants}
+                          isGroup={isGroup}
+                        />
+                        <ModeratorCopilotPanel 
+                          conversationId={rawConversationId} 
+                          participants={participants}
+                          isGroup={isGroup}
+                        />
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
             <div className="p-4 border-t border-white/10 bg-gray-800/50 flex justify-end">
@@ -313,6 +334,6 @@ export default function AdminDashboard() {
       )}
       </>
       )}
-    </div>
+    </AdminLayout>
   );
 }
